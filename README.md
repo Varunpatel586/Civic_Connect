@@ -1,99 +1,100 @@
-# Civic Connect 🏛️
+# Civic Connect
 
-**Civic Connect** is a location-aware mobile application built with Flutter (Frontend) and a Node.js/Express + MongoDB server (Backend). It empowers citizens to report, map, and democratically validate local civic issues (such as potholes, streetlights, garbage pile-ups, water supply failures, and road hazards) directly to public entities.
-
----
-
-## Key Features
-
-- 📸 **Camera & Image Reporting**: Take direct snapshots of civic complaints. Supports uploading multiple attachments per report.
-- 📍 **GPS & Geocoding Location**: Automatically capture exact coordinates and translate them to human-readable street addresses.
-- 🗺️ **Proximity Feed**: Read, query, and search reported issues within a custom radius boundary.
-- 🔐 **Secure Session Auth**: JWT-based login and signup integrations powered by standard bcrypt hashing and Google OAuth verification on MongoDB.
-- 💬 **Comments Section**: Community discussions under specific complaint tickets.
-- 👍 **Democratic Validation**: Agree/Disagree validation voting system to filter out duplicates or verify reports.
-- 🛡️ **Admin Status Escalation**: Admin actions to update statuses (`Pending`, `In Progress`, `Resolved`, `Rejected`).
+Civic Connect is a location-aware mobile application built with Flutter and a Node.js/Express backend querying a MongoDB database. The system enables citizens to report, map, and validate municipal issues such as potholes, damaged streetlights, and public hazards directly to authorities.
 
 ---
 
-## Repository Architecture
+## Core Features
+
+- **Complaint Reporting**: Capture photo evidence and submit reports with supporting images.
+- **Geographic Pinpointing**: Automatically resolve coordinates using GPS and reverse-geocode them to formatted address strings.
+- **Proximity Search**: Filter and view issues reported within a specified radius using geospatial proximity calculations.
+- **Community Validation**: Prevent duplicate reports through an Agree/Disagree voting system.
+- **Status Verification**: Track issues through state lifecycles: Pending, In Progress, Resolved, and Rejected.
+- **Authentication**: JWT-secured login and signup workflows supporting email/password and Google OAuth token exchange.
+- **Discussions**: Threaded comment sections under reported complaints.
+
+---
+
+## System Architecture
+
+The project operates under a client-server architecture model. To ensure security, the mobile client communicates solely via REST endpoints with a Node.js middle-tier API:
+
+- **Client App (Flutter)**: Manages UI rendering and uses Provider state management to coordinate authentication, location, and issue updates.
+- **Backend API (Express & Node.js)**: Verifies JWT tokens, processes local file uploads, parses geospatial queries, and interacts with MongoDB.
+- **Database (MongoDB)**: Stores data in collections using Mongoose schemas with compound unique indexing to prevent duplicate voting.
+
+---
+
+## Repository Structure
 
 ```
-├── docs/                # Project Documentation Portal
-│   ├── README.md        # Documentation Index Directory
-│   ├── architecture.md  # Software architecture models and diagrams
-│   ├── database.md      # MongoDB collections structure
-│   ├── models.md        # Strongly typed Dart serialization classes
-│   ├── services.md      # API integration, Geolocator, and deep links
-│   ├── setup.md         # Setup scripts, environment variables, and configuration
-│   └── views.md         # Interactive UI screens and custom items
-├── server/              # Node.js/Express & MongoDB Backend API
-│   ├── config/          # MongoDB database connect
-│   ├── middleware/      # JWT verification middleware
-│   ├── models/          # Mongoose data schemas (User, Issue, Comment, etc.)
-│   ├── routes/          # Express route endpoints (auth, issues, comments)
-│   ├── uploads/         # Local folder storing uploaded complaint images
-│   ├── .env             # Server environment variables
-│   └── server.js        # Express app main bootstrapper
-└── lib/                 # Flutter source files
-    ├── models/          # Data representations
-    ├── providers/       # State controllers
-    ├── screens/         # UI pages
-    ├── services/        # Backend REST connectors
-    └── widgets/         # Reusable layouts
+├── docs/                # System documentation specifications
+│   ├── README.md        # Documentation index
+│   ├── architecture.md  # System diagrams and data flows
+│   ├── database.md      # MongoDB collections and index schema
+│   ├── models.md        # Client-side Dart models
+│   ├── services.md      # REST Client endpoints mapping
+│   ├── setup.md         # Detailed configuration settings
+│   └── views.md         # UI components and widgets mapping
+├── server/              # Node.js Express server backend
+│   ├── config/          # MongoDB configuration and Mongoose connector
+│   ├── middleware/      # JWT authentication middleware
+│   ├── models/          # Mongoose database models
+│   ├── routes/          # Express route controllers
+│   ├── uploads/         # Local storage folder for complaint images
+│   └── server.js        # Main server entrypoint
+└── lib/                 # Flutter mobile application codebase
+    ├── models/          # Dart models
+    ├── providers/       # ChangeNotifier state providers
+    ├── screens/         # Page views
+    ├── services/        # REST API connectors
+    └── widgets/         # Reusable widgets
 ```
 
 ---
 
-## Comprehensive Project Documentation
+## Configuration & Local Run Guide
 
-We have prepared comprehensive documentation files explaining the architecture, services, schemas, and views. Explore them here:
+### 1. Configure the Environment
+Create a unified environment configuration file named `.env` in the project root directory:
 
-- **[Docs Home / Index](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/docs/README.md)**: Main portal listing all documentation files.
-- **[Architecture Blueprint](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/docs/architecture.md)**: Diagrams showing communication between UI, Providers, Services, REST API, and MongoDB.
-- **[Database Schema Specification](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/docs/database_schema.md)**: MongoDB collection maps, indexes, and schemas.
-- **[Services Layer Specification](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/docs/services.md)**: REST API endpoint maps, coordinates geocoding, and local file upload systems.
-- **[Data Models Catalog](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/docs/models.md)**: Class maps converting JSON parameters to Dart types.
-- **[Screens & Widgets Catalog](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/docs/screens_and_widgets.md)**: Visual layout structures and interactive cards.
-- **[Setup & Configuration Guide](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/docs/setup_and_configuration.md)**: Environment variable configuration, MongoDB settings, and running scripts for server and client.
+```ini
+# Client Variables
+API_BASE_URL=http://10.0.2.2:5000/api
 
----
+# Server Variables
+PORT=5000
+MONGO_URI=mongodb://localhost:27017/civic_connect
+JWT_SECRET=super_secret_jwt_key_civic_connect_123
+API_URL=http://localhost:5000
+```
 
-## Quick Start Guide
+*Note: For iOS simulators or Web builds, set `API_BASE_URL` to `http://localhost:5000/api`.*
 
-### 1. Run Backend Server
-Inside the `server/` directory:
-- Create `server/.env`:
-  ```ini
-  PORT=5000
-  MONGO_URI=mongodb://localhost:27017/civic_connect
-  JWT_SECRET=super_secret_jwt_key_civic_connect_123
-  API_URL=http://localhost:5000
-  ```
-- Install dependencies and start:
-  ```bash
-  npm install
-  npm start
-  ```
+### 2. Run the Express Backend
+Navigate to the `/server` directory and run:
+```bash
+npm install
+npm start
+```
 
-### 2. Configure & Run Flutter Mobile App
-In the root directory:
-- Create `.env`:
-  ```ini
-  API_BASE_URL=http://10.0.2.2:5000/api # Use http://localhost:5000/api for iOS simulators
-  ```
-- Fetch packages and start:
-  ```powershell
-  flutter pub get
-  flutter run
-  ```
+### 3. Run the Flutter Mobile Client
+Navigate to the project root directory and run:
+```bash
+flutter pub get
+flutter run
+```
 
 ---
 
-## Core Technologies
-- **Client**: Flutter & Dart (Material 3 UI, Google Fonts)
-- **Backend API**: Node.js & Express (Multer, jsonwebtoken, bcryptjs)
-- **Database**: MongoDB (Mongoose ODM)
-- **State Management**: Provider
-- **Device Sensors**: Camera API, Geolocator (GPS tracking)
-- **Geocoding**: Reverse coordinates mapping to address string
+## Technical Specifications
+
+For detailed analysis of individual components, refer to the specification files in the documentation folder:
+
+- **[Documentation Index](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/docs/README.md)**: Navigation portal for all specifications.
+- **[System Architecture](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/docs/architecture.md)**: In-depth data flow and sequence diagrams.
+- **[Database Schemas](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/docs/database_schema.md)**: Mongoose schemas, reference linkages, and collection indexing.
+- **[Services Mapping](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/docs/services.md)**: REST client network structures and geocoding services.
+- **[Mobile View Components](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/docs/screens_and_widgets.md)**: Layout widgets, status color chips, and sheet builders.
+- **[Setup Specifications](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/docs/setup_and_configuration.md)**: Detailed database scripts and configurations.
