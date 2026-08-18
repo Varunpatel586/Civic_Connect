@@ -105,6 +105,22 @@ class AppProvider with ChangeNotifier {
     }
   }
 
+  Future<UserProfile?> signInWithGoogle() async {
+    _setLoading(true);
+    try {
+      await _authService.signInWithGoogle();
+      await _checkCurrentUser();
+      if (isAuthenticated) {
+        await _loadUserIssues();
+      }
+      return _currentUser;
+    } catch (e) {
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   Future<void> signOut() async {
     _setLoading(true);
     try {

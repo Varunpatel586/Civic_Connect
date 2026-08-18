@@ -230,8 +230,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final appProvider = Provider.of<AppProvider>(context);
     final user = appProvider.currentUser;
-    final avatarUrl = user?.avatarUrl;
-    final joinDate = user?.createdAt;
+    
+    if (user == null) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    final avatarUrl = user.avatarUrl;
+    final joinDate = user.createdAt;
     
     return Scaffold(
       appBar: AppBar(
@@ -256,7 +265,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: Column(
                     children: [
                       const SizedBox(height: 20),
-                      _buildProfileHeader(user!, avatarUrl),
+                      _buildProfileHeader(user, avatarUrl),
                       const SizedBox(height: 16),
                       _buildActionButtons(),
                     ],

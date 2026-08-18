@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'package:civic_connect/services/auth_service.dart';
+import '../providers/app_provider.dart';
 
 enum AuthView { login, signup }
 
@@ -22,7 +24,6 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _obscurePassword = true;
   bool _isLoading = false;
 
-  final AuthService _authService = AuthService();
   final _formKey = GlobalKey<FormState>();
 
   Future<void> _signInWithGoogle() async {
@@ -31,7 +32,7 @@ class _AuthScreenState extends State<AuthScreen> {
         _isLoading = true;
       });
 
-      await _authService.signInWithGoogle();
+      await Provider.of<AppProvider>(context, listen: false).signInWithGoogle();
 
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/home');
@@ -63,21 +64,22 @@ class _AuthScreenState extends State<AuthScreen> {
     });
 
     try {
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
       if (_isLogin) {
         // Login
-        await _authService.signInWithEmail(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
+        await appProvider.signIn(
+          _emailController.text.trim(),
+          _passwordController.text.trim(),
         );
         if (mounted) {
           Navigator.pushReplacementNamed(context, '/home');
         }
       } else {
         // Signup
-        await _authService.signUpWithEmail(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-          username: _usernameController.text.trim(),
+        await appProvider.signUp(
+          _emailController.text.trim(),
+          _passwordController.text.trim(),
+          _usernameController.text.trim(),
         );
 
         if (mounted) {
