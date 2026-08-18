@@ -1,164 +1,137 @@
-# Civic Connect: Database Schema
+# Civic Connect: MongoDB Database Schema
 
-This document details the database schema, tables, constraints, and relationships configured in Supabase (PostgreSQL) for **Civic Connect**.
+This document details the database schema, collection properties, references, and indexes configured in MongoDB using the Mongoose ODM for **Civic Connect**.
 
 ---
 
-## ER Diagram (Entity-Relationship)
+## Entity Schema Mapping
+
+Since MongoDB is a document-oriented database, relations are maintained using Reference Objects (`mongoose.Schema.Types.ObjectId` referencing specific collections):
 
 ```mermaid
 erDiagram
-    ROLES {
-        int id PK
-        string name
-    }
-    PROFILES {
-        uuid id PK "FK to auth.users"
+    users {
+        ObjectId id PK
         string username "UNIQUE"
-        string email
-        int role_id FK "FK to roles"
-        string avatar_url "nullable"
-        timestamp created_at
-        timestamp updated_at
+        string email "UNIQUE"
+        string password "hashed"
+        string role "user | admin"
+        string avatarUrl "nullable"
+        date createdAt
+        date updatedAt
     }
-    ISSUES {
-        uuid id PK "Default: gen_random_uuid()"
-        uuid user_id FK "FK to profiles.id"
+    issues {
+        ObjectId id PK
+        ObjectId userId FK "Ref: users"
         string title
-        string category
-        string description "nullable"
-        string image_url
-        string-array image_urls "text[]"
+        string category "pothole | street_light | water..."
+        string description
+        string imageUrl
+        string-array imageUrls
         double latitude
         double longitude
-        string address "nullable"
-        string status "Default: Pending"
-        int agree_count "Default: 0"
-        int disagree_count "Default: 0"
-        timestamp created_at
-        timestamp updated_at
+        string address
+        string status "Pending | In Progress..."
+        int agreeCount
+        int disagreeCount
+        date createdAt
+        date updatedAt
     }
-    COMMENTS {
-        int id PK "Serial/Bigint"
-        uuid issue_id FK "FK to issues.id"
-        uuid user_id FK "FK to profiles.id"
+    comments {
+        ObjectId id PK
+        ObjectId issueId FK "Ref: issues"
+        ObjectId userId FK "Ref: users"
         string content
-        timestamp created_at
+        date createdAt
     }
-    VOTES {
-        uuid id PK
-        uuid issue_id FK "FK to issues.id"
-        uuid user_id FK "FK to profiles.id"
-        boolean is_agree
-        timestamp created_at
-        timestamp updated_at
+    votes {
+        ObjectId id PK
+        ObjectId issueId FK "Ref: issues"
+        ObjectId userId FK "Ref: users"
+        boolean isAgree
+        date createdAt
+        date updatedAt
     }
-    ISSUE_UPVOTES {
-        uuid id PK
-        uuid issue_id FK "FK to issues.id"
-        uuid user_id FK "FK to profiles.id"
-        timestamp created_at
+    upvotes {
+        ObjectId id PK
+        ObjectId issueId FK "Ref: issues"
+        ObjectId userId FK "Ref: users"
+        date createdAt
     }
 
-    ROLES ||--o{ PROFILES : "has"
-    PROFILES ||--o{ ISSUES : "reports"
-    PROFILES ||--o{ COMMENTS : "writes"
-    PROFILES ||--o{ VOTES : "casts"
-    PROFILES ||--o{ ISSUE_UPVOTES : "toggles"
-    ISSUES ||--o{ COMMENTS : "contains"
-    ISSUES ||--o{ VOTES : "receives"
-    ISSUES ||--o{ ISSUE_UPVOTES : "receives"
+    users ||--o{ issues : "reports"
+    users ||--o{ comments : "writes"
+    users ||--o{ votes : "casts"
+    users ||--o{ upvotes : "toggles"
+    issues ||--o{ comments : "receives"
+    issues ||--o{ votes : "receives"
+    issues ||--o{ upvotes : "receives"
 ```
 
 ---
 
-## Tables
+## Collection Schemas
 
-### 1. `roles`
-Stores access levels (e.g., standard users and administrators).
-- `id` (INTEGER, Primary Key)
-- `name` (TEXT, e.g. `'user'`, `'admin'`)
+### 1. `users` collection
+Maps authentication profiles. Exposes user access roles.
+- `username` (String, Required, Unique, Trimmed)
+- `email` (String, Required, Unique, Lowercase, Trimmed)
+- `password` (String, Required, Hashed via bcryptjs)
+- `role` (String, Enum: `['user', 'admin']`, Default: `'user'`)
+- `avatarUrl` (String, Default: `null`)
+- `createdAt` (Date, Default: `Date.now`)
+- `updatedAt` (Date, Default: `Date.now`)
 
-### 2. `profiles`
-Extends Supabase's native auth configuration. Usually created via a PostgreSQL trigger on user sign-up.
-- `id` (UUID, Primary Key, Foreign Key referencing `auth.users.id` ON DELETE CASCADE)
-- `username` (TEXT, Unique, non-null)
-- `email` (TEXT, non-null)
-- `role_id` (INTEGER, Foreign Key referencing `roles.id`, typically defaults to `1` for standard users)
-- `avatar_url` (TEXT, Nullable, points to user avatar in Storage)
-- `created_at` (TIMESTAMPTZ, Default: `now()`)
-- `updated_at` (TIMESTAMPTZ)
+### 2. `issues` collection
+Represents municipal complaints reported by users.
+- `userId` (ObjectId, Reference: `'User'`, Required)
+- `title` (String, Required, Trimmed)
+- `category` (String, Required, Enum: `['pothole', 'street_light', 'water', 'electricity', 'garbage', 'road', 'drainage', 'other']`)
+- `description` (String, Default: `''`)
+- `imageUrl` (String, Required, holds link to main picture)
+- `imageUrls` (Array of Strings, holds all supporting photo paths)
+- `latitude` (Number, Required)
+- `longitude` (Number, Required)
+- `address` (String, Default: `''`, resolved via geocoding)
+- `status` (String, Enum: `['Pending', 'In Progress', 'Resolved', 'Rejected']`, Default: `'Pending'`)
+- `agreeCount` (Number, Default: `0`, automatically synchronized on vote cast)
+- `disagreeCount` (Number, Default: `0`)
+- `createdAt` (Date, Default: `Date.now`)
+- `updatedAt` (Date, Default: `Date.now`)
 
-### 3. `issues`
-Represents the core civic complaints reported by citizens.
-- `id` (UUID, Primary Key, Default: `gen_random_uuid()`)
-- `user_id` (UUID, Foreign Key referencing `profiles.id` ON DELETE SET NULL)
-- `title` (TEXT, summary of issue)
-- `category` (TEXT, types of issues: `'pothole'`, `'street_light'`, `'water'`, `'electricity'`, `'garbage'`, `'road'`, `'drainage'`, `'other'`)
-- `description` (TEXT, Nullable)
-- `image_url` (TEXT, URL of primary captured image)
-- `image_urls` (TEXT ARRAY / `text[]`, stores additional images uploaded during reporting)
-- `latitude` (DOUBLE PRECISION)
-- `longitude` (DOUBLE PRECISION)
-- `address` (TEXT, Nullable, holds the geocoded address string)
-- `status` (TEXT, Default: `'Pending'`, values: `'Pending'`, `'In Progress'`, `'Resolved'`, `'Rejected'`)
-- `agree_count` (INTEGER, Default: `0`, incremented by database trigger or service sync on upvote/agree)
-- `disagree_count` (INTEGER, Default: `0`)
-- `created_at` (TIMESTAMPTZ, Default: `now()`)
-- `updated_at` (TIMESTAMPTZ)
+### 3. `comments` collection
+Holds discussion replies posted underneath issues.
+- `issueId` (ObjectId, Reference: `'Issue'`, Required)
+- `userId` (ObjectId, Reference: `'User'`, Required)
+- `content` (String, Required, Trimmed)
+- `createdAt` (Date, Default: `Date.now`)
 
-### 4. `comments`
-Comments section underneath reported issues.
-- `id` (BIGINT/SERIAL, Primary Key)
-- `issue_id` (UUID, Foreign Key referencing `issues.id` ON DELETE CASCADE)
-- `user_id` (UUID, Foreign Key referencing `profiles.id` ON DELETE CASCADE)
-- `content` (TEXT, non-empty text)
-- `created_at` (TIMESTAMPTZ, Default: `now()`)
+### 4. `votes` collection
+Manages the validation voting mechanism (Agree vs. Disagree).
+- `issueId` (ObjectId, Reference: `'Issue'`, Required)
+- `userId` (ObjectId, Reference: `'User'`, Required)
+- `isAgree` (Boolean, Required)
+- `createdAt` (Date, Default: `Date.now`)
+- `updatedAt` (Date, Default: `Date.now`)
 
-### 5. `votes` (Agree/Disagree Voting Mechanism)
-Handles binary opinion validation (Agree/Disagree) to verify if the reported issue is actual or duplicated.
-- `id` (UUID, Primary Key, Default: `gen_random_uuid()`)
-- `issue_id` (UUID, Foreign Key referencing `issues.id` ON DELETE CASCADE)
-- `user_id` (UUID, Foreign Key referencing `profiles.id` ON DELETE CASCADE)
-- `is_agree` (BOOLEAN, `true` for Agree, `false` for Disagree)
-- `created_at` (TIMESTAMPTZ, Default: `now()`)
-- `updated_at` (TIMESTAMPTZ)
-- *Constraint*: Unique combination of `(issue_id, user_id)` preventing duplicate voting.
-
-### 6. `issue_upvotes` (Simple Toggle Upvote Mechanism)
-A secondary/legacy upvote count table.
-- `id` (UUID, Primary Key, Default: `gen_random_uuid()`)
-- `issue_id` (UUID, Foreign Key referencing `issues.id` ON DELETE CASCADE)
-- `user_id` (UUID, Foreign Key referencing `profiles.id` ON DELETE CASCADE)
-- `created_at` (TIMESTAMPTZ, Default: `now()`)
-- *Constraint*: Unique combination of `(issue_id, user_id)`.
-
-> [!NOTE]
-> **Dual Voting System**: The codebase contains two systems for validating issues:
-> 1. An **Agree/Disagree system** managed by `votes` table which increases `agree_count` / `disagree_count` columns directly on the `issues` table. Used in [issue_card.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/widgets/issue_card.dart).
-> 2. A **Simple Upvote system** managed by `issue_upvotes` table which is toggled via `UpvoteService`. Used in [UpvoteButton.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/widgets/UpvoteButton.dart) and [issue_submission_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/screens/issue_submission_screen.dart).
+### 5. `upvotes` collection
+Manages legacy upvotes.
+- `issueId` (ObjectId, Reference: `'Issue'`, Required)
+- `userId` (ObjectId, Reference: `'User'`, Required)
+- `createdAt` (Date, Default: `Date.now`)
 
 ---
 
-## Stored Procedures (RPCs) and Functions
+## Database Indexes
 
-### 1. `get_nearby_issues`
-A PL/pgSQL function used to fetch issues within a given radius using coordinate distance calculation.
-- **Parameters**:
-  - `lat` (DOUBLE PRECISION): Target Latitude
-  - `lng` (DOUBLE PRECISION): Target Longitude
-  - `radius_km` (DOUBLE PRECISION): Radius boundary
-  - `max_count` (INTEGER): Row limit
-- **Returns**: `SETOF issues` table rows within the radius.
+MongoDB collections are indexed to ensure queries are highly performant:
 
-### 2. `get_issue_votes`
-Aggregates votes count for a specific issue.
-- **Parameters**:
-  - `p_issue_id` (UUID)
-- **Returns**: A JSON or table row containing `agree_count` and `disagree_count`.
-
-### 3. `get_issue_upvotes`
-Aggregates total upvotes from the `issue_upvotes` table.
-- **Parameters**:
-  - `issue_uuid` (UUID)
-- **Returns**: `INTEGER` sum of upvote rows.
+1. **`users` indexes**:
+   - `{ email: 1 }` (Unique) - Prevents register collisions on duplicate email.
+   - `{ username: 1 }` (Unique) - Prevents register collisions on duplicate username.
+2. **`issues` indexes**:
+   - `{ latitude: 1, longitude: 1 }` (Geospatial lookup) - Essential for coordinate calculations in nearby proximity queries.
+3. **`votes` indexes**:
+   - `{ issueId: 1, userId: 1 }` (Unique) - Enforces that a profile can cast at most **one** Agree/Disagree vote per reported issue.
+4. **`upvotes` indexes**:
+   - `{ issueId: 1, userId: 1 }` (Unique) - Enforces that a profile can toggle at most **one** legacy upvote per reported issue.

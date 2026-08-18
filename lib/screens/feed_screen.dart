@@ -4,7 +4,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/api_client.dart';
+import '../services/auth_service.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -14,7 +15,7 @@ class FeedScreen extends StatefulWidget {
 }
 
 class _FeedScreenState extends State<FeedScreen> {
-  final _supabase = Supabase.instance.client;
+  final ApiClient _apiClient = ApiClient();
   List<Map<String, dynamic>> _posts = [];
   bool _isLoading = true;
 
@@ -44,18 +45,13 @@ class _FeedScreenState extends State<FeedScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final response = await _supabase
-          .from(
-            'issues',
-          ) // Changed from 'posts' to 'issues' to match your database
-          .select('*')
-          .eq('status', 'approved')
-          .order('created_at', ascending: false);
+      final response = await _apiClient.get('/issues/nearby?lat=0&lng=0&radius_km=10000');
 
       List<Map<String, dynamic>> posts = [];
 
-      if (response != null && response.isNotEmpty) {
-        posts = List<Map<String, dynamic>>.from(response);
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        posts = List<Map<String, dynamic>>.from(data);
       } else {
         // Add placeholder posts if no posts found
         // Using consistent UUIDs based on the post title for demo purposes
@@ -438,7 +434,7 @@ class PostDetailsBottomSheet extends StatefulWidget {
 
 class _PostDetailsBottomSheetState extends State<PostDetailsBottomSheet> {
   final TextEditingController _commentController = TextEditingController();
-  final _supabase = Supabase.instance.client;
+  final ApiClient _apiClient = ApiClient();
   List<Map<String, dynamic>> _comments = [];
   bool _isLoadingComments = true;
 
@@ -500,24 +496,18 @@ class _PostDetailsBottomSheetState extends State<PostDetailsBottomSheet> {
 
   Future<void> _fetchComments() async {
     try {
-      final response = await _supabase
-          .from('comments')
-          .select('''
-            *,
-            profiles!inner (
-              id,
-              username,
-              avatar_url
-            )
-          ''')
-          .eq('issue_id', widget.post['id'])
-          .order('created_at', ascending: false);
+      final response = await _apiClient.get('/comments/issue/${widget.post['id']}');
 
-      if (mounted) {
-        setState(() {
-          _comments = List<Map<String, dynamic>>.from(response);
-          _isLoadingComments = false;
-        });
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        if (mounted) {
+          setState(() {
+            _comments = List<Map<String, dynamic>>.from(data);
+            _isLoadingComments = false;
+          });
+        }
+      } else {
+        throw Exception('Failed to load comments');
       }
     } catch (e) {
       debugPrint('Error fetching comments: $e');
@@ -535,7 +525,7 @@ class _PostDetailsBottomSheetState extends State<PostDetailsBottomSheet> {
     if (commentText.isEmpty) return;
 
     try {
-      final user = _supabase.auth.currentUser;
+      final user = await AuthService().getCurrentUserProfile();
       if (user == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -605,11 +595,13 @@ class _PostDetailsBottomSheetState extends State<PostDetailsBottomSheet> {
         );
       }
 
-      await _supabase.from('comments').insert({
-        'issue_id': widget.post['id'],
-        'user_id': user.id,
+      final response = await _apiClient.post('/comments/issue/${widget.post['id']}', {
         'content': commentText,
       });
+
+      if (response.statusCode != 201 && response.statusCode != 200) {
+        throw Exception('Failed to post comment to MongoDB REST');
+      }
 
       _commentController.clear();
 

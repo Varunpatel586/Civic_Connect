@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'issue_submission_screen.dart';
 
@@ -25,7 +24,6 @@ class _CameraScreenState extends State<CameraScreen> {
   double _minZoomLevel = 1.0;
   double _maxZoomLevel = 1.0;
   Position? _currentPosition;
-  final _supabase = Supabase.instance.client;
 
   @override
   void initState() {

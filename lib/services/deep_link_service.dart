@@ -1,10 +1,10 @@
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'api_client.dart';
 
 class DeepLinkService {
   static final DeepLinkService _instance = DeepLinkService._internal();
-  final supabase = Supabase.instance.client;
+  final ApiClient _apiClient = ApiClient();
 
   factory DeepLinkService() => _instance;
   DeepLinkService._internal();
@@ -33,9 +33,11 @@ class DeepLinkService {
   }
 
   Future<void> _handleDeepLink(Uri uri) async {
-    if (uri.toString().contains('access_token') || 
-        uri.toString().contains('error=')) {
-      await supabase.auth.getSessionFromUrl(uri);
+    debugPrint('Received Deep Link: $uri');
+    final token = uri.queryParameters['token'];
+    if (token != null) {
+      await _apiClient.setToken(token);
+      debugPrint('Token parsed and saved from deep link callback: $token');
     }
   }
 }

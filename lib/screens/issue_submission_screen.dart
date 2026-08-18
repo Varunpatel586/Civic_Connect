@@ -1,9 +1,10 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/UpvoteButton.dart';
+import '../services/api_client.dart';
 
 class IssueSubmissionScreen extends StatefulWidget {
   final File initialImage;
@@ -30,7 +31,7 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
   String _selectedCategory = 'pothole';
   final List<File> _additionalImages = [];
   bool _isSubmitting = false;
-  final _supabase = Supabase.instance.client;
+  final ApiClient _apiClient = ApiClient();
   int _upvoteCount = 0; // Add upvote count state
   bool _hasUpvoted = false; // Add upvote state
 
@@ -56,26 +57,23 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
 
   Future<void> _fetchIssueData() async {
     try {
-      // Fetch issue data including upvotes
       if (widget.issueId == null) {
         throw Exception('Issue ID is required for fetching issue details');
       }
       
-      final response = await _supabase
-          .from('issues')
-          .select('''
-            *,
-            issue_upvotes(count)
-          ''')
-          .eq('id', widget.issueId!)
-          .single();
+      final response = await _apiClient.get('/issues/${widget.issueId}');
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        
+        final upvotesResponse = await _apiClient.get('/issues/${widget.issueId}/upvote/count');
+        final int upvotesCount = upvotesResponse.statusCode == 200 
+            ? jsonDecode(upvotesResponse.body)['count'] ?? 0 
+            : 0;
 
-      if (response != null) {
         setState(() {
-          _descriptionController.text = response['description'] ?? '';
-          _selectedCategory = response['category'] ?? 'pothole';
-          _upvoteCount = response['issue_upvotes'][0]['count'] ?? 0;
-          // You would need additional logic to check if current user has upvoted
+          _descriptionController.text = data['description'] ?? '';
+          _selectedCategory = data['category'] ?? 'pothole';
+          _upvoteCount = upvotesCount;
         });
       }
     } catch (e) {
@@ -106,7 +104,6 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      final userId = _supabase.auth.currentUser?.id ?? 'anonymous';
       final now = DateTime.now().toIso8601String();
 
       // Upload all images
@@ -115,7 +112,6 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
       // Upload initial image
       final initialImageUrl = await _uploadImage(
         widget.initialImage,
-        userId,
         'initial_$now',
       );
       imageUrls.add(initialImageUrl);
@@ -124,23 +120,27 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
       for (var i = 0; i < _additionalImages.length; i++) {
         final url = await _uploadImage(
           _additionalImages[i],
-          userId,
           'additional_${now}_$i',
         );
         imageUrls.add(url);
       }
 
       // Save issue to database
-      final response = await _supabase.from('issues').insert({
-        'user_id': userId,
+      final response = await _apiClient.post('/issues', {
+        'title': '${_selectedCategory.replaceAll('_', ' ').toUpperCase()}',
         'category': _selectedCategory,
         'description': _descriptionController.text,
-        'image_urls': imageUrls,
+        'imageUrl': imageUrls.first,
+        'imageUrls': imageUrls,
         'latitude': widget.latitude,
         'longitude': widget.longitude,
         'created_at': now,
-        'status': 'pending',
-      }).select();
+        'status': 'Pending',
+      });
+
+      if (response.statusCode != 201 && response.statusCode != 200) {
+        throw Exception('Failed to submit issue to MongoDB REST: ${response.body}');
+      }
 
       if (mounted) {
         Navigator.of(context).popUntil((route) => route.isFirst);
@@ -161,18 +161,20 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
     }
   }
 
-  Future<String> _uploadImage(File image, String userId, String name) async {
-    final fileBytes = await image.readAsBytes();
-    final fileExt = image.path.split('.').last;
-    final fileName = '${DateTime.now().millisecondsSinceEpoch}_$name.$fileExt';
+  Future<String> _uploadImage(File image, String name) async {
+    final response = await _apiClient.uploadMultipart(
+      '/issues/upload',
+      fields: {},
+      files: [image],
+      fileFieldName: 'photo',
+    );
 
-    await _supabase.storage
-        .from('issue_photos')
-        .uploadBinary('$userId/$fileName', fileBytes);
-
-    return _supabase.storage
-        .from('issue_photos')
-        .getPublicUrl('$userId/$fileName');
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['url'] ?? '';
+    } else {
+      throw Exception('Failed to upload image to MongoDB REST: ${response.body}');
+    }
   }
 
   @override

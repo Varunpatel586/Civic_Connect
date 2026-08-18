@@ -1,31 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:provider/provider.dart';
 import '../screens/auth_screen.dart';
 import '../screens/home_screen.dart';
+import '../providers/app_provider.dart';
 
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<AuthState>(
-      stream: Supabase.instance.client.auth.onAuthStateChange,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
-          );
-        }
+    final appProvider = Provider.of<AppProvider>(context);
 
-        final session = Supabase.instance.client.auth.currentSession;
-        if (session == null) {
-          return AuthScreen();
-        }
+    if (appProvider.isLoading && !appProvider.isAuthenticated) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
 
-        return HomeScreen();
-      },
-    );
+    if (!appProvider.isAuthenticated) {
+      return const AuthScreen();
+    }
+
+    return const HomeScreen();
   }
 }

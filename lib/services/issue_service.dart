@@ -1,10 +1,11 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:geocoding/geocoding.dart';
+import 'api_client.dart';
 import '../models/models.dart';
 
 class IssueService {
-  final SupabaseClient _supabase = Supabase.instance.client;
+  final ApiClient _apiClient = ApiClient();
 
   Future<List<Issue>> getNearbyIssues({
     required double latitude,
@@ -13,20 +14,15 @@ class IssueService {
     int limit = 50,
   }) async {
     try {
-      // This is a simplified query. In a real app, you'd use PostGIS for spatial queries
-      final response = await _supabase
-          .rpc('get_nearby_issues', params: {
-            'lat': latitude,
-            'lng': longitude,
-            'radius_km': radiusKm,
-            'max_count': limit,
-          })
-          .select()
-          .order('created_at', ascending: false);
+      final response = await _apiClient.get(
+        '/issues/nearby?lat=$latitude&lng=$longitude&radius_km=$radiusKm&limit=$limit',
+      );
 
-      return (response as List)
-          .map((issue) => Issue.fromJson(issue as Map<String, dynamic>))
-          .toList();
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        return data.map((issue) => Issue.fromJson(issue as Map<String, dynamic>)).toList();
+      }
+      return [];
     } catch (e) {
       debugPrint('Get nearby issues error: $e');
       return [];
@@ -35,31 +31,12 @@ class IssueService {
 
   Future<Issue?> getIssueById(String issueId) async {
     try {
-      final response = await _supabase
-          .from('issues')
-          .select('''
-            *,
-            profiles!user_id (
-              username,
-              avatar_url,
-              created_at
-            )
-          ''')
-          .eq('id', issueId)
-          .single();
-
-      if (response == null) return null;
-      
-      // Format the response to match the expected structure for Issue.fromJson
-      final formattedResponse = {
-        ...response,
-        'user': response['profiles'] ?? {
-          'username': 'Unknown',
-          'avatar_url': null,
-        },
-      };
-
-      return Issue.fromJson(formattedResponse);
+      final response = await _apiClient.get('/issues/$issueId');
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        return Issue.fromJson(data);
+      }
+      return null;
     } catch (e) {
       debugPrint('Get issue by id error: $e');
       return null;
@@ -74,38 +51,53 @@ class IssueService {
     required double longitude,
   }) async {
     try {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) throw Exception('User not authenticated');
-
       // Get address from coordinates
       String? address;
       try {
         final placemarks = await placemarkFromCoordinates(latitude, longitude);
         if (placemarks.isNotEmpty) {
           final place = placemarks.first;
-          address =
-              '${place.street}, ${place.locality}, ${place.postalCode}, ${place.country}';
+          address = '${place.street}, ${place.locality}, ${place.postalCode}, ${place.country}';
         }
       } catch (e) {
         debugPrint('Error getting address: $e');
       }
 
-      final response = await _supabase
-          .from('issues')
-          .insert({
-            'user_id': user.id,
-            'title': title.trim(),
-            'description': description?.trim(),
-            'image_url': imageUrl,
-            'latitude': latitude,
-            'longitude': longitude,
-            'status': 'Pending',
-            if (address != null) 'address': address,
-          })
-          .select()
-          .single();
+      // Map categories from title or default to 'other'
+      String category = 'other';
+      final lowerTitle = title.toLowerCase();
+      if (lowerTitle.contains('pothole')) category = 'pothole';
+      else if (lowerTitle.contains('light')) category = 'street_light';
+      else if (lowerTitle.contains('water')) category = 'water';
+      else if (lowerTitle.contains('electricity') || lowerTitle.contains('power')) category = 'electricity';
+      else if (lowerTitle.contains('garbage') || lowerTitle.contains('trash')) category = 'garbage';
+      else if (lowerTitle.contains('road')) category = 'road';
+      else if (lowerTitle.contains('drain')) category = 'drainage';
 
-      return Issue.fromJson(response);
+      final response = await _apiClient.post('/issues', {
+        'title': title.trim(),
+        'description': description?.trim() ?? '',
+        'category': category,
+        'imageUrl': imageUrl,
+        'imageUrls': [imageUrl],
+        'latitude': latitude,
+        'longitude': longitude,
+        if (address != null) 'address': address,
+      });
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        
+        // Ensure standard fields map back correctly
+        final formatted = {
+          ...data,
+          'id': data['_id'] ?? data['id'],
+          'user_id': data['userId'] ?? data['user_id'],
+        };
+        return Issue.fromJson(formatted);
+      } else {
+        throw Exception('Failed to create issue: ${response.body}');
+      }
     } catch (e) {
       debugPrint('Create issue error: $e');
       rethrow;
@@ -117,10 +109,13 @@ class IssueService {
     required String status,
   }) async {
     try {
-      await _supabase
-          .from('issues')
-          .update({'status': status})
-          .eq('id', issueId);
+      final response = await _apiClient.patch('/issues/$issueId/status', {
+        'status': status,
+      });
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to update issue status: ${response.body}');
+      }
     } catch (e) {
       debugPrint('Update issue status error: $e');
       rethrow;
@@ -129,15 +124,12 @@ class IssueService {
 
   Future<List<Comment>> getIssueComments(String issueId) async {
     try {
-      final response = await _supabase
-          .from('comments')
-          .select('*, profiles!inner(username, avatar_url)')
-          .eq('issue_id', issueId)
-          .order('created_at', ascending: true);
-
-      return (response as List)
-          .map((comment) => Comment.fromJson(comment as Map<String, dynamic>))
-          .toList();
+      final response = await _apiClient.get('/comments/issue/$issueId');
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        return data.map((comment) => Comment.fromJson(comment as Map<String, dynamic>)).toList();
+      }
+      return [];
     } catch (e) {
       debugPrint('Get comments error: $e');
       return [];
@@ -149,20 +141,16 @@ class IssueService {
     required String content,
   }) async {
     try {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) throw Exception('User not authenticated');
+      final response = await _apiClient.post('/comments/issue/$issueId', {
+        'content': content,
+      });
 
-      final response = await _supabase
-          .from('comments')
-          .insert({
-            'issue_id': issueId,
-            'user_id': user.id,
-            'content': content.trim(),
-          })
-          .select()
-          .single();
-
-      return Comment.fromJson(response);
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        return Comment.fromJson(data);
+      } else {
+        throw Exception('Failed to post comment: ${response.body}');
+      }
     } catch (e) {
       debugPrint('Add comment error: $e');
       rethrow;
@@ -175,38 +163,21 @@ class IssueService {
     required bool isAgree,
   }) async {
     try {
-      // First, check if user has already voted
-      final existingVote = await _supabase
-          .from('votes')
-          .select()
-          .eq('issue_id', issueId)
-          .eq('user_id', userId)
-          .maybeSingle();
+      final response = await _apiClient.post('/issues/$issueId/vote', {
+        'isAgree': isAgree,
+      });
 
-      if (existingVote != null) {
-        // Update existing vote
-        await _supabase
-            .from('votes')
-            .update({
-              'is_agree': isAgree,
-              'updated_at': DateTime.now().toIso8601String(),
-            })
-            .eq('id', existingVote['id']);
-        
-        // Update vote counts
-        await _updateVoteCounts(issueId);
-        return {'success': true, 'action': 'updated'};
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        return {
+          'success': true,
+          'action': 'voted',
+          'agree_count': data['agreeCount'],
+          'disagree_count': data['disagreeCount'],
+        };
       } else {
-        // Create new vote
-        await _supabase.from('votes').insert({
-          'issue_id': issueId,
-          'user_id': userId,
-          'is_agree': isAgree,
-        });
-        
-        // Update vote counts
-        await _updateVoteCounts(issueId);
-        return {'success': true, 'action': 'added'};
+        final errorData = jsonDecode(response.body);
+        return {'success': false, 'error': errorData['message'] ?? 'Voting failed'};
       }
     } catch (e) {
       debugPrint('Vote on issue error: $e');
@@ -214,56 +185,17 @@ class IssueService {
     }
   }
 
-  Future<Map<String, dynamic>> _updateVoteCounts(String issueId) async {
-    try {
-      // Get agree count
-      final agreeResponse = await _supabase
-          .from('votes')
-          .select()
-          .eq('issue_id', issueId)
-          .eq('is_agree', true);
-      
-      final agreeCount = agreeResponse.length;
-
-      // Get disagree count
-      final disagreeResponse = await _supabase
-          .from('votes')
-          .select()
-          .eq('issue_id', issueId)
-          .eq('is_agree', false);
-      
-      final disagreeCount = disagreeResponse.length;
-
-      // Update issue with new vote counts
-      await _supabase
-          .from('issues')
-          .update({
-            'agree_count': agreeCount,
-            'disagree_count': disagreeCount,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', issueId);
-
-      return {
-        'agree_count': agreeCount,
-        'disagree_count': disagreeCount,
-      };
-    } catch (e) {
-      debugPrint('Error updating vote counts: $e');
-      rethrow;
-    }
-  }
-
   Future<Map<String, dynamic>> getVoteCounts(String issueId) async {
     try {
-      final response = await _supabase.rpc('get_issue_votes', params: {
-        'p_issue_id': issueId,
-      });
-
-      return {
-        'agree': response['agree_count'] ?? 0,
-        'disagree': response['disagree_count'] ?? 0,
-      };
+      final response = await _apiClient.get('/issues/$issueId');
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        return {
+          'agree': data['agree_count'] ?? 0,
+          'disagree': data['disagree_count'] ?? 0,
+        };
+      }
+      return {'agree': 0, 'disagree': 0};
     } catch (e) {
       debugPrint('Get vote counts error: $e');
       return {'agree': 0, 'disagree': 0};
@@ -272,15 +204,12 @@ class IssueService {
 
   Future<List<Issue>> getUserIssues(String userId) async {
     try {
-      final response = await _supabase
-          .from('issues')
-          .select()
-          .eq('user_id', userId)
-          .order('created_at', ascending: false);
-
-      return (response as List)
-          .map((issue) => Issue.fromJson(issue as Map<String, dynamic>))
-          .toList();
+      final response = await _apiClient.get('/issues/user');
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        return data.map((issue) => Issue.fromJson(issue as Map<String, dynamic>)).toList();
+      }
+      return [];
     } catch (e) {
       debugPrint('Get user issues error: $e');
       return [];

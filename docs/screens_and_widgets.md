@@ -10,8 +10,8 @@ This document describes the presentation layer classes in `lib/screens/` and `li
 Located in [auth_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/screens/auth_screen.dart).
 - **Purpose**: Manages authentication entry points (Login vs. Signup toggle).
 - **Features**:
-  - Secure email/password forms with validation (e.g. checking `@` symbol and minimum password length of 6).
-  - Integrates a custom styled Google Authentication button using `AuthService.signInWithGoogle()`.
+  - Secure email/password forms with validation.
+  - Integrates a Google Authentication button using `AuthService.signInWithGoogle()`, exchanging tokens with the Node.js backend.
   - Displays loading indicators during backend requests and errors in an alert strip.
 
 ### 2. HomeScreen
@@ -21,15 +21,16 @@ Located in [home_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/
   - Implements a material-design bottom navigation bar with a curved cutout.
   - Hosts a center-docked Floating Action Button (FAB) that opens the camera to report an issue.
   - Manages view routing toggles across Feed, Map, and Profile sections.
+  - Verifies session tokens using `AuthService().isAuthenticated` before launching the camera.
 
 ### 3. FeedScreen
 Located in [feed_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/screens/feed_screen.dart).
 - **Purpose**: Displays reported civic issues in a feed.
 - **Features**:
-  - Dynamically fetches approved issues from the `issues` table via Supabase client.
-  - If the database is empty or queries fail (e.g., initial startup without database connection), it loads representative seed issues (Pothole on Main Street, Broken Street Light, Garbage Pile-up, Damaged Sidewalk) with placeholder image URLs.
+  - Dynamically fetches nearby issues from the `/issues/nearby` REST endpoint.
+  - If the database is empty or queries fail, it loads representative seed issues (Potholes, streetlights, garbage pile-ups) with placeholder parameters.
   - Provides swipe-to-refresh integration.
-  - Integrates `PostDetailsBottomSheet` for viewing details and comments in place.
+  - Integrates `PostDetailsBottomSheet` for viewing details and comments in place, fetching from `/comments/issue/:issueId`.
 
 ### 4. CameraScreen
 Located in [camera_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/screens/camera_screen.dart).
@@ -43,17 +44,10 @@ Located in [camera_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connec
 Located in [issue_submission_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/screens/issue_submission_screen.dart).
 - **Purpose**: Form to enter complaint parameters and submit to the backend database.
 - **Features**:
-  - Renders a dropdown list of categories:
-    - `pothole` (Pothole)
-    - `street_light` (Street Light)
-    - `water` (Water Supply)
-    - `electricity` (Electricity)
-    - `garbage` (Garbage Pile-up)
-    - `road` (Road Damage)
-    - `drainage` (Drainage)
-    - `other` (Other)
+  - Renders a dropdown list of categories (pothole, street light, water supply, electricity, garbage, road damage, drainage, other).
   - Integrates `image_picker` to upload multiple supporting photos.
-  - Progress bar indicates background uploading of file streams into Supabase Storage.
+  - Uploads images as binary streams to the backend server `/issues/upload` endpoint using `ApiClient().uploadMultipart`, retrieving static server URLs.
+  - Saves the issue to MongoDB via `POST /issues`.
 
 ### 6. IssueDetailScreen
 Located in [issue_detail_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/screens/issue_detail_screen.dart).
@@ -69,6 +63,7 @@ Located in [profile_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Conne
 - **Features**:
   - Displays count statistics for complaints submitted, votes registered, and resolved status counts.
   - Loads a list of issues reported by the authenticated user using `AppProvider.userIssues`.
+  - Queries `AppProvider.currentUser` to display profile fields, and calls `AuthService.updateProfile` to modify profile details.
 
 ---
 
@@ -85,14 +80,14 @@ Located in [issue_card.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/l
     - **RESOLVED**: Green (`Colors.green`)
     - **REJECTED**: Red (`Colors.red`)
   - Displays the geocoded street address and timestamp.
-  - Hosts interactive buttons for **Agree** (upvotes), **Disagree** (downvotes), and **Comment** navigation.
+  - Hosts interactive buttons for **Agree** (upvotes), **Disagree** (downvotes), and **Comment** navigation. Calls `/issues/:id/vote`.
 
 ### 2. UpvoteButton
 Located in [UpvoteButton.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/widgets/UpvoteButton.dart).
 - **Purpose**: A reusable vote state toggle icon.
 - **Features**:
   - Shows filled thumbs up if voted, outlined if not.
-  - Toggles count changes locally and updates the database using `UpvoteService`.
+  - Toggles count changes locally and updates the database using `UpvoteService` (`POST /issues/:id/upvote`).
 
 ### 3. CommentTile
 Located in [comment_tile.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/widgets/comment_tile.dart).

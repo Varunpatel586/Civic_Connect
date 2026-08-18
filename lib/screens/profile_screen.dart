@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import '../providers/app_provider.dart';
+import '../services/auth_service.dart';
+import '../models/models.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -18,12 +21,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late TextEditingController _phoneController;
   bool _isEditing = false;
   bool _isLoading = false;
-  final _supabase = Supabase.instance.client;
   
   Future<void> _pickImage() async {
     // TODO: Implement image picking
     // This would typically use image_picker to select an image from gallery/camera
-    // and then upload it to Supabase Storage
+    // and then upload it to the MongoDB REST backend
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Image picker will be implemented here')),
     );
@@ -32,10 +34,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    final user = _supabase.auth.currentUser;
-    _nameController = TextEditingController(text: user?.userMetadata?['full_name'] ?? '');
-    _emailController = TextEditingController(text: user?.email ?? '');
-    _phoneController = TextEditingController(text: user?.phone ?? '');
+    _nameController = TextEditingController();
+    _emailController = TextEditingController();
+    _phoneController = TextEditingController();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      final user = appProvider.currentUser;
+      if (user != null) {
+        setState(() {
+          _nameController.text = user.username;
+          _emailController.text = user.email;
+          _phoneController.text = ''; // Default phone empty since Profile model has username & email
+        });
+      }
+    });
   }
 
   @override
@@ -52,28 +65,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _isLoading = true);
     
     try {
-      final user = _supabase.auth.currentUser;
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      final user = appProvider.currentUser;
       if (user == null) throw 'User not authenticated';
       
-      // Update auth user metadata
-      await _supabase.auth.updateUser(
-        UserAttributes(
-          data: {
-            'full_name': _nameController.text,
-            'phone': _phoneController.text,
-          },
-        ),
+      // Update profile on custom backend via AuthService
+      await AuthService().updateProfile(
+        username: _nameController.text,
       );
       
-      // Update profile in the profiles table
-      await _supabase
-          .from('profiles')
-          .update({
-            'full_name': _nameController.text,
-            'phone': _phoneController.text,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', user.id);
+      // Refresh local AppProvider cache
+      await appProvider.initialize();
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -96,7 +98,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _signOut() async {
     try {
-      await _supabase.auth.signOut();
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      await appProvider.signOut();
       if (mounted) {
         Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
       }
@@ -109,7 +112,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Widget _buildProfileHeader(User user, String? avatarUrl) {
+  Widget _buildProfileHeader(UserProfile user, String? avatarUrl) {
     return Column(
       children: [
         Stack(
@@ -140,16 +143,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         const SizedBox(height: 16),
         Text(
-          user.userMetadata?['full_name'] ?? 'User',
+          user.username,
           style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
         ),
-        if (user.email != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            user.email!,
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-        ],
+        const SizedBox(height: 4),
+        Text(
+          user.email,
+          style: TextStyle(color: Colors.grey[600]),
+        ),
         const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -227,13 +228,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = _supabase.auth.currentUser;
-    final avatarUrl = user?.userMetadata?['avatar_url'];
-    // Convert the createdAt string to DateTime if it exists
-    DateTime? joinDate;
-    if (user?.createdAt != null) {
-      joinDate = DateTime.tryParse(user!.createdAt);
-    }
+    final appProvider = Provider.of<AppProvider>(context);
+    final user = appProvider.currentUser;
+    final avatarUrl = user?.avatarUrl;
+    final joinDate = user?.createdAt;
     
     return Scaffold(
       appBar: AppBar(

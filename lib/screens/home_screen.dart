@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'feed_screen.dart';
 import 'profile_screen.dart';
 import 'camera_screen.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/auth_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,9 +23,9 @@ class _HomeScreenState extends State<HomeScreen> {
   ];
 
   Future<void> _onAddPressed() async {
-    final session = Supabase.instance.client.auth.currentSession;
+    final isAuthenticated = await AuthService().isAuthenticated;
     
-    if (session == null) {
+    if (!isAuthenticated) {
       if (mounted) {
         // Show a message that the user needs to log in
         ScaffoldMessenger.of(context).showSnackBar(

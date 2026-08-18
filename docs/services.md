@@ -1,75 +1,78 @@
 # Civic Connect: Service Layer (Infrastructure)
 
-This document describes the services located in `lib/services/` that handle external integrations (Supabase database, authentication, storage, geolocation, deep linking).
+This document describes the services located in `lib/services/` that handle external integrations (REST API endpoints, local file uploading, geolocation coordinates, and deep linking).
 
 ---
 
-## 1. AuthService
-Located in [auth_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/auth_service.dart). Manages Supabase authentication sessions and user profile synchronization.
+## 1. ApiClient
+Located in [api_client.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/api_client.dart). The core network connector that manages:
+- Reading backend URL (`API_BASE_URL`) from dotenv.
+- Caching JWT authentication tokens locally via `SharedPreferences`.
+- Appending Authorization headers (`Bearer <token>`) automatically.
+- Supporting generic `get`, `post`, `put`, `patch`, `delete` HTTP queries.
+- Supporting `uploadMultipart` for uploading file streams to the backend server storage.
+
+---
+
+## 2. AuthService
+Located in [auth_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/auth_service.dart). Manages backend user session routes.
 
 ### Key API
-- **`currentUser`**: Returns the currently logged-in Supabase `User?`.
-- **`isAuthenticated`**: Helper boolean checking if `currentUser` is not null.
-- **`onAuthStateChange`**: Stream exposing Supabase authentication status updates.
-- **`getCurrentUserProfile()`**: Fetches profile fields (`username`, `email`, `role`, `avatar_url`) from the `profiles` table matching the authenticated user ID.
-- **`signInWithEmail({required String email, required String password})`**: Performs password login. Throws `AppAuthException` if failed.
-- **`signUpWithEmail({required String email, required String password, required String username})`**: Signs up a new user. It ensures that the username and email are unique, registers the user in Supabase Auth, and writes username details to the `profiles` table.
-- **`signOut()`**: Terminate current auth session.
-- **`updateProfile({String? username, String? fullName, String? avatarUrl})`**: Updates customizable fields in the `profiles` table.
-- **`signInWithGoogle()`**: Starts a native Google Sign-in flow, extracts the ID token, and exchanges it for a Supabase session using `signInWithIdToken`. If no profile row exists, it automatically triggers profile creation.
+- **`isAuthenticated`**: Checks if the client has a cached JWT token.
+- **`getCurrentUserProfile()`**: Performs `GET /auth/profile`. Resolves user metadata.
+- **`signInWithEmail({required String email, required String password})`**: Performs `POST /auth/login`. Sets the returned JWT token on success.
+- **`signUpWithEmail({required String email, required String password, required String username})`**: Performs `POST /auth/signup`. Sets the returned JWT token.
+- **`signOut()`**: Resets the token via `ApiClient.setToken(null)`.
+- **`updateProfile({String? username, String? fullName, String? avatarUrl})`**: Performs `PUT /auth/profile`.
+- **`signInWithGoogle()`**: Starts a native Google Sign-in flow, obtains the ID Token, and invokes `POST /auth/google` on the backend to exchange it for a JWT session token.
 
 ---
 
-## 2. IssueService
-Located in [issue_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/issue_service.dart). Handles creation, fetching, voting, status management, and comment loading for civic issues.
+## 3. IssueService
+Located in [issue_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/issue_service.dart). Interacts with backend issue routes.
 
 ### Key API
-- **`getNearbyIssues({required double latitude, required double longitude, double radiusKm = 5.0, int limit = 50})`**: Queries coordinates inside the radius using the `get_nearby_issues` RPC.
-- **`getIssueById(String issueId)`**: Queries a single issue and performs an inner join on `profiles` to include reporter details.
-- **`createIssue({required String title, required String? description, required String imageUrl, required double latitude, required double longitude})`**: Creates a new issue. Before committing, it calls `geocoding`'s `placemarkFromCoordinates` to convert coordinate coordinates into a human-readable street address.
-- **`updateIssueStatus({required String issueId, required String status})`**: Modifies the state of an issue (e.g. from `'Pending'` to `'In Progress'`). Restricted to admin users in UI.
-- **`voteOnIssue({required String issueId, required String userId, required bool isAgree})`**: Submits a vote in the `votes` table. It updates or inserts the vote record and automatically calls `_updateVoteCounts()` to update aggregate `agree_count` / `disagree_count` fields in the `issues` table.
-- **`getUserIssues(String userId)`**: Fetches issues reported by a specific profile ID.
+- **`getNearbyIssues({required double latitude, required double longitude, double radiusKm = 5.0, int limit = 50})`**: Queries `GET /issues/nearby`. Resolves nearby reports based on coordinate distance.
+- **`getIssueById(String issueId)`**: Queries `GET /issues/:id`.
+- **`createIssue({required String title, required String? description, required String imageUrl, required double latitude, required double longitude})`**: Translates coordinates to address via Geocoding, determines category keywords from title, and calls `POST /issues` on the backend.
+- **`updateIssueStatus({required String issueId, required String status})`**: Performs `PATCH /issues/:id/status`.
+- **`voteOnIssue({required String issueId, required String userId, required bool isAgree})`**: Performs `POST /issues/:id/vote` with JSON payload `{"isAgree": bool}`. The backend recalculates aggregate counts.
+- **`getUserIssues(String userId)`**: Performs `GET /issues/user`.
 
 ---
 
-## 3. CommentService
-Located in [comment_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/comment_service.dart). Manages comments posted on civic reports.
+## 4. CommentService
+Located in [comment_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/comment_service.dart). Manages comment sections under reports.
 
 ### Key API
-- **`getCommentsByIssueId(String issueId)`**: Retrieves comments in descending order of time, joining the commenter's profile details.
-- **`addComment({required String issueId, required String content})`**: Validates content, inserts comment, and returns the parsed [Comment](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/models/comment.dart) object.
-- **`updateComment({required String commentId, required String content})`**: Edits comments. Throws an exception if the comment does not belong to the currently logged-in user.
-- **`deleteComment(String commentId)`**: Deletes comments after validating ownership.
+- **`getCommentsByIssueId(String issueId)`**: Queries `GET /comments/issue/:issueId`.
+- **`addComment({required String issueId, required String content})`**: Queries `POST /comments/issue/:issueId`.
+- **`updateComment({required String commentId, required String content})`**: Queries `PUT /comments/:commentId`.
+- **`deleteComment(String commentId)`**: Queries `DELETE /comments/:commentId`.
 
 ---
 
-## 4. LocationService
+## 5. LocationService
 Located in [location_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/location_service.dart). Interacts with native GPS and geocoding plugins.
 
 ### Key API
 - **`isLocationServiceEnabled()`**: Determines if system GPS toggle is switched on.
-- **`checkAndRequestPermission()`**: Checks status of Geolocator permissions (`denied`, `deniedForever`, `whileInUse`, `always`). Requests permissions if not set.
+- **`checkAndRequestPermission()`**: Requests permissions dynamically.
 - **`getCurrentPosition()`**: Fetches raw GPS coordinates (`Position`) using High accuracy.
-- **`getAddressFromLatLng(double latitude, double longitude)`**: Performs reverse geocoding via the `geocoding` library to translate coordinate numbers into a formatted string (e.g. `'Street Name, City, Country'`).
-- **`calculateDistance(...)`**: Uses the Haversine formula to compute the distance between two coordinates in kilometers.
+- **`getAddressFromLatLng(double latitude, double longitude)`**: Reverse-geocodes coordinate values to formatted street addresses.
 
 ---
 
-## 5. UpvoteService
-Located in [upvote_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/upvote_service.dart). Manages the secondary upvoting count structure (distinct from agree/disagree).
+## 6. UpvoteService
+Located in [upvote_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/upvote_service.dart). Handles upvoting counts.
 
 ### Key API
-- **`toggleUpvote(String issueId)`**: Toggles upvote state. If an entry in `issue_upvotes` exists, it is deleted; otherwise, a new one is created.
-- **`getUpvoteCount(String issueId)`**: Fetches aggregate upvotes count from `issue_upvotes`.
-- **`hasUserUpvoted(String issueId)`**: Returns a boolean indicating if the active user profile has already upvoted the issue.
-- **`streamUpvoteCount(String issueId)`**: Emits a realtime stream of integer upvote counts using Supabase real-time database streams.
+- **`toggleUpvote(String issueId)`**: Performs `POST /issues/:id/upvote` to toggle upvotes in MongoDB.
+- **`getUpvoteCount(String issueId)`**: Queries `GET /issues/:id/upvote/count`.
+- **`streamUpvoteCount(String issueId)`**: Emits real-time upvote streams by polling `getUpvoteCount()` every 5 seconds.
 
 ---
 
-## 6. DeepLinkService
-Located in [deep_link_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/deep_link_service.dart). Captures incoming URL streams on the device, mostly used for OAuth login redirects.
-
-### Key API
-- **`handleInitialUri()`**: Inspects if the app was launched via a deep link URI (e.g. `io.supabase.civicconnect://login-callback`). Parses and exchanges the URL session parameters.
-- **`listenToDeepLinks()`**: Sets up a persistent stream listener on incoming app links.
+## 7. DeepLinkService
+Located in [deep_link_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/deep_link_service.dart). Captures incoming URL streams, extracts token parameters, and updates `ApiClient` accordingly.
+- **`_handleDeepLink(Uri uri)`**: Parses query parameters: `uri.queryParameters['token']`.

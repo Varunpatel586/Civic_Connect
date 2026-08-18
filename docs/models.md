@@ -1,20 +1,20 @@
 # Civic Connect: Data Models
 
-This document outlines the data model classes defined in `lib/models/`. These models handle parsing between raw JSON maps from Supabase and strongly-typed Dart objects.
+This document outlines the data model classes defined in `lib/models/`. These models handle parsing between raw JSON maps from the Node.js/MongoDB backend and strongly-typed Dart objects.
 
 ---
 
 ## 1. UserProfile
-Defined in [user_profile.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/models/user_profile.dart). Maps standard and administrative accounts from the `profiles` table.
+Defined in [user_profile.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/models/user_profile.dart). Maps standard and administrative accounts from the `users` database collection.
 
 ### Fields
 | Field Name | Type | Description |
 | :--- | :--- | :--- |
-| `id` | `String` | Unique database identifier (matches Supabase Auth UID) |
+| `id` | `String` | Unique database identifier (matches MongoDB `_id` string) |
 | `username` | `String` | Public display username |
 | `email` | `String` | Registered email address |
 | `role` | `String` | Role status (defaults to `'user'`, other value: `'admin'`) |
-| `avatarUrl` | `String?` | Optional profile image link pointing to storage bucket |
+| `avatarUrl` | `String?` | Optional profile image link pointing to server upload folder |
 | `createdAt` | `DateTime` | Date of registration |
 
 ### Methods
@@ -29,11 +29,11 @@ Defined in [issue.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/mo
 ### Fields
 | Field Name | Type | Description |
 | :--- | :--- | :--- |
-| `id` | `String` | Unique identifier (UUID string) |
-| `userId` | `String` | Creator's ID (Foreign key) |
+| `id` | `String` | Unique identifier (matches MongoDB `_id` string) |
+| `userId` | `String` | Creator's ID (Foreign key link) |
 | `title` | `String` | Short summary title of the report |
 | `description` | `String?` | Detailed complaint explanation |
-| `imageUrl` | `String` | Public URL of captured photo |
+| `imageUrl` | `String` | Public URL of primary captured image |
 | `latitude` | `double` | Precise GPS Latitude |
 | `longitude` | `double` | Precise GPS Longitude |
 | `timestamp` | `DateTime` | Captured time |
@@ -43,14 +43,6 @@ Defined in [issue.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/mo
 | `disagreeCount`| `int` | Total voters disagreeing with the report details |
 | `address` | `String?` | Reversed geocoded street address |
 | `userVote` | `String?` | Vote state of the currently logged-in user (`'agree'`, `'disagree'`, or `null`) |
-
-### Extensions
-In [app_provider.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/providers/app_provider.dart), there is an extension `IssueVoteExtension` on the `Issue` class defining:
-```dart
-extension IssueVoteExtension on Issue {
-  String? get userVote => null; // Placeholder for custom logic
-}
-```
 
 ---
 

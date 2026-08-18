@@ -1,6 +1,6 @@
 # Civic Connect: Setup and Configuration
 
-This document provides setup instructions, environment variables configuration, database configuration, and running instructions for **Civic Connect**.
+This document provides setup instructions, environment variables configuration, database configuration, and running instructions for both the **Node.js Server** and the **Flutter Client**, powered by a single unified root environment file.
 
 ---
 
@@ -8,22 +8,36 @@ This document provides setup instructions, environment variables configuration, 
 Before running the application, make sure you have the following installed:
 - **Flutter SDK**: `^3.9.2` (run `flutter --version` to check)
 - **Dart SDK**: `^3.9.2`
-- **Android Studio / Xcode** (for emulation and compilation tools)
-- **Supabase Account**: An active Supabase database project
+- **Node.js**: `^18.x` or higher (run `node -v` to check)
+- **MongoDB**: A running local MongoDB instance (`mongodb://localhost:27017`) or a MongoDB Atlas connection string.
+- **Android Studio / Xcode** (for emulation tools)
 
 ---
 
-## 1. Environment Variables Configuration
+## 1. Unified Environment Configuration (`/.env`)
 
-The app relies on a `.env` file located at the project root directory. This is loaded during boot time in [main.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/main.dart).
+The project uses a single **global `.env` file** placed in the project root. Both the Flutter client and the Node.js server read their configurations from this single source.
 
-Create a `.env` file in the project root:
+Create a `.env` file in the project root directory:
 ```ini
-SUPABASE_URL=https://<your-supabase-project-id>.supabase.co
-SUPABASE_ANON_KEY=<your-anon-public-api-key>
+# === CLIENT CONFIGURATIONS ===
+API_BASE_URL=http://10.0.2.2:5000/api
+# Note: Use http://localhost:5000/api for iOS simulators/Web runs.
+
+# === SERVER CONFIGURATIONS ===
+PORT=5000
+MONGO_URI=mongodb://localhost:27017/civic_connect
+JWT_SECRET=super_secret_jwt_key_civic_connect_123
+API_URL=http://localhost:5000
 ```
 
-Add `.env` to your `pubspec.yaml` assets configuration to package it with your app:
+> [!IMPORTANT]
+> **Mobile Client Emulator IP Configuration**:
+> - **Android Emulator**: Use `http://10.0.2.2:5000/api` for `API_BASE_URL`. The Android sandbox maps `10.0.2.2` to the host machine's `localhost`.
+> - **iOS Simulator / Web**: Use `http://localhost:5000/api` directly.
+> - **Physical Device**: Use the local IP address of your host machine (e.g. `http://192.168.1.50:5000/api`) and ensure both host and device are connected to the same Wi-Fi network.
+
+Verify that `.env` is declared in assets inside the root `pubspec.yaml` file:
 ```yaml
 flutter:
   assets:
@@ -33,70 +47,48 @@ flutter:
 
 ---
 
-## 2. Supabase Backend Setup
+## 2. Running the Backend Server (`/server`)
 
-For the application services to operate, configure the following schemas, buckets, and policies in your Supabase project dashboard:
+The backend server resolves `.env` dynamically from the parent workspace root folder.
 
-### A. Database Tables & Relations
-Create the tables below using the Supabase SQL editor:
-- **`roles`**: Contains columns `id` (int PK) and `name` (text). Add rows for `1` (`user`) and `2` (`admin`).
-- **`profiles`**: Contains columns `id` (uuid PK, references auth.users), `username` (text unique), `email` (text), `role_id` (int, references roles.id, default 1), `avatar_url` (text), `created_at` (timestamptz).
-- **`issues`**: Contains columns `id` (uuid PK, default gen_random_uuid()), `user_id` (uuid, references profiles.id), `title` (text), `category` (text), `description` (text), `image_url` (text), `image_urls` (text[]), `latitude` (numeric), `longitude` (numeric), `address` (text), `status` (text, default `'Pending'`), `agree_count` (int, default 0), `disagree_count` (int, default 0), `created_at` (timestamptz), `updated_at` (timestamptz).
-- **`comments`**: Contains columns `id` (bigint PK generated always as identity), `issue_id` (uuid, references issues), `user_id` (uuid, references profiles.id), `content` (text), `created_at` (timestamptz).
-- **`votes`**: Contains columns `id` (uuid PK), `issue_id` (uuid, references issues), `user_id` (uuid, references profiles.id), `is_agree` (boolean), `created_at` (timestamptz), `updated_at` (timestamptz).
-- **`issue_upvotes`**: Contains columns `id` (uuid PK), `issue_id` (uuid, references issues), `user_id` (uuid, references profiles.id), `created_at` (timestamptz).
+Execute the following commands in the `/server` directory:
+```bash
+# 1. Install node packages
+npm install
 
-### B. Storage Buckets
-Create a public storage bucket in Supabase named **`issue_photos`**. This bucket holds the images captured on user cameras.
-Set up a Row Level Security (RLS) policy on the bucket allowing authenticated users write access and public read access.
+# 2. Run in development mode (using nodemon)
+npm run dev
 
-### C. Database RPC Functions
-Execute the following SQL commands to register stored procedures required by [IssueService](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/issue_service.dart):
-
-```sql
--- 1. get_nearby_issues
-CREATE OR REPLACE FUNCTION get_nearby_issues(
-  lat DOUBLE PRECISION,
-  lng DOUBLE PRECISION,
-  radius_km DOUBLE PRECISION,
-  max_count INTEGER
-)
-RETURNS SETOF issues
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  RETURN QUERY
-  SELECT *
-  FROM issues
-  WHERE (6371 * acos(
-    cos(radians(lat)) * cos(radians(latitude)) * 
-    cos(radians(longitude) - radians(lng)) + 
-    sin(radians(lat)) * sin(radians(latitude))
-  )) <= radius_km
-  ORDER BY created_at DESC
-  LIMIT max_count;
-END;
-$$;
-
--- 2. get_issue_votes
-CREATE OR REPLACE FUNCTION get_issue_votes(p_issue_id UUID)
-RETURNS TABLE (agree_count INT, disagree_count INT) 
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  RETURN QUERY
-  SELECT
-    COUNT(*) FILTER (WHERE is_agree = true)::INT as agree_count,
-    COUNT(*) FILTER (WHERE is_agree = false)::INT as disagree_count
-  FROM votes
-  WHERE issue_id = p_issue_id;
-END;
-$$;
+# Or run in production mode
+npm start
+```
+The server will boot and display:
+```
+MongoDB Connected: localhost
+Server started on port 5000
 ```
 
 ---
 
-## 3. Deep Linking (OAuth Configuration)
+## 3. Running the Client Mobile App (Root Directory)
+
+The client application loads `API_BASE_URL` from the root `.env` to make REST requests.
+
+Execute the following commands in the project root directory:
+```powershell
+# 1. Fetch flutter packages
+flutter pub get
+
+# 2. Run diagnostic checks
+flutter doctor
+
+# 3. Compile and launch on connected emulator
+flutter run
+```
+
+---
+
+## 4. Deep Linking (OAuth Configuration)
 
 To enable Google sign-in and password resets redirecting back into the mobile app:
 
@@ -110,34 +102,6 @@ In `android/app/src/main/AndroidManifest.xml`, configure an intent filter inside
     <data android:scheme="io.supabase.civicconnect" android:host="login-callback" />
 </intent-filter>
 ```
-
-### iOS Configuration
-In `ios/Runner/Info.plist`, configure custom URL schemes:
-```xml
-<key>CFBundleURLTypes</key>
-<array>
-    <dict>
-        <key>CFBundleURLSchemes</key>
-        <array>
-            <string>io.supabase.civicconnect</string>
-        </array>
-    </dict>
-</array>
-```
-
----
-
-## 4. Run the Project Locally
-
-Run the following commands in the workspace root directory:
-
-```powershell
-# 1. Fetch dependencies
-flutter pub get
-
-# 2. Check issues and verify setup
-flutter doctor
-
-# 3. Compile and Run on connected emulator/device
-flutter run
-```
+When OAuth redirects to this URI, the backend server appends the user JWT token:
+`io.supabase.civicconnect://login-callback?token=<jwt-token>`
+The client-side `DeepLinkService` captures this token and updates headers.

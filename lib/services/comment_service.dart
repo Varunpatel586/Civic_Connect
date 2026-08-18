@@ -1,67 +1,22 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'api_client.dart';
 import '../models/comment.dart';
-import '../models/user_profile.dart';
 
 class CommentService {
-  final SupabaseClient _supabase = Supabase.instance.client;
+  final ApiClient _apiClient = ApiClient();
 
   /// Fetches all comments for a specific issue
   Future<List<Comment>> getCommentsByIssueId(String issueId) async {
     try {
-      debugPrint('Fetching comments for issue: $issueId');
+      debugPrint('Fetching comments for issue via MongoDB REST: $issueId');
 
-      final response = await _supabase
-          .from('comments')
-          .select('''
-            *,
-            profiles:user_id (
-              id,
-              username,
-              avatar_url,
-              created_at
-            )
-          ''')
-          .eq('issue_id', issueId)
-          .order('created_at', ascending: false);
-
-      if (response == null) {
-        debugPrint('No comments found for issue: $issueId');
-        return [];
+      final response = await _apiClient.get('/comments/issue/$issueId');
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        return data.map((comment) => Comment.fromJson(comment as Map<String, dynamic>)).toList();
       }
-
-      debugPrint('Retrieved ${response.length} comments for issue: $issueId');
-
-      final comments = (response as List)
-          .map((comment) {
-            try {
-              return Comment.fromJson({
-                'id': comment['id'].toString(),
-                'issue_id': comment['issue_id'],
-                'user_id': comment['user_id'],
-                'content': comment['content'],
-                'created_at': comment['created_at'],
-                'user': {
-                  'id': comment['user_id'],
-                  'username': comment['profiles']?['username'] ?? 'Unknown',
-                  'email': '',
-                  'role': 'user',
-                  'avatar_url': comment['profiles']?['avatar_url'],
-                  'created_at':
-                      comment['profiles']?['created_at'] ??
-                      comment['created_at'],
-                },
-              });
-            } catch (e) {
-              debugPrint('Error parsing comment: $e');
-              return null;
-            }
-          })
-          .whereType<Comment>()
-          .toList();
-
-      return comments;
+      return [];
     } catch (e) {
       debugPrint('Get comments error: $e');
       rethrow;
@@ -74,54 +29,19 @@ class CommentService {
     required String content,
   }) async {
     try {
-      debugPrint('Adding comment to issue: $issueId');
+      debugPrint('Adding comment to issue via MongoDB REST: $issueId');
 
-      final user = _supabase.auth.currentUser;
-      if (user == null) throw Exception('User not authenticated');
-
-      final trimmedContent = content.trim();
-      if (trimmedContent.isEmpty) {
-        throw Exception('Comment cannot be empty');
-      }
-
-      debugPrint('Inserting comment into database...');
-      // Insert comment and fetch the created comment with user profile in a single query
-      final response = await _supabase
-          .from('comments')
-          .insert({
-            'issue_id': issueId,
-            'user_id': user.id,
-            'content': trimmedContent,
-          })
-          .select('''
-            *,
-            profiles:user_id (
-              id,
-              username,
-              avatar_url,
-              created_at
-            )
-          ''')
-          .single();
-
-      debugPrint('Successfully added comment with ID: ${response['id']}');
-
-      return Comment.fromJson({
-        'id': response['id'].toString(),
-        'issue_id': response['issue_id'],
-        'user_id': response['user_id'],
-        'content': response['content'],
-        'created_at': response['created_at'],
-        'user': {
-          'id': response['user_id'],
-          'username': response['profiles']?['username'] ?? 'Unknown',
-          'email': '',
-          'role': 'user',
-          'avatar_url': response['profiles']?['avatar_url'],
-          'created_at':
-              response['profiles']?['created_at'] ?? response['created_at'],
-        },
+      final response = await _apiClient.post('/comments/issue/$issueId', {
+        'content': content,
       });
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        return Comment.fromJson(data);
+      } else {
+        final errorData = jsonDecode(response.body);
+        throw Exception(errorData['message'] ?? 'Failed to post comment');
+      }
     } catch (e) {
       debugPrint('Add comment error: $e');
       rethrow;
@@ -134,54 +54,17 @@ class CommentService {
     required String content,
   }) async {
     try {
-      final user = _supabase.auth.currentUser;
-      if (user == null) throw Exception('User not authenticated');
-
-      if (content.trim().isEmpty) {
-        throw Exception('Comment cannot be empty');
-      }
-
-      // First verify the comment exists and belongs to the user
-      final existingComment = await _supabase
-          .from('comments')
-          .select('user_id')
-          .eq('id', int.parse(commentId))
-          .single();
-
-      if (existingComment['user_id'] != user.id) {
-        throw Exception('You can only edit your own comments');
-      }
-
-      // Update the comment
-      await _supabase
-          .from('comments')
-          .update({'content': content.trim()})
-          .eq('id', int.parse(commentId));
-
-      // Fetch the updated comment with user profile
-      final updatedComment = await _supabase
-          .from('comments')
-          .select('''
-            *,
-            profiles:user_id (
-              username,
-              avatar_url,
-              email,
-              role,
-              created_at
-            )
-          ''')
-          .eq('id', int.parse(commentId))
-          .single();
-
-      return Comment.fromJson({
-        'id': updatedComment['id'].toString(),
-        'issue_id': updatedComment['issue_id'],
-        'user_id': updatedComment['user_id'],
-        'content': updatedComment['content'],
-        'created_at': updatedComment['created_at'],
-        'user': UserProfile.fromJson(updatedComment['profiles']),
+      final response = await _apiClient.put('/comments/$commentId', {
+        'content': content,
       });
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        return Comment.fromJson(data);
+      } else {
+        final errorData = jsonDecode(response.body);
+        throw Exception(errorData['message'] ?? 'Failed to update comment');
+      }
     } catch (e) {
       debugPrint('Update comment error: $e');
       rethrow;
@@ -191,21 +74,11 @@ class CommentService {
   /// Deletes a comment
   Future<void> deleteComment(String commentId) async {
     try {
-      final user = _supabase.auth.currentUser;
-      if (user == null) throw Exception('User not authenticated');
-
-      // First verify the comment exists and belongs to the user
-      final existingComment = await _supabase
-          .from('comments')
-          .select('user_id')
-          .eq('id', int.parse(commentId))
-          .single();
-
-      if (existingComment['user_id'] != user.id) {
-        throw Exception('You can only delete your own comments');
+      final response = await _apiClient.delete('/comments/$commentId');
+      if (response.statusCode != 200) {
+        final errorData = jsonDecode(response.body);
+        throw Exception(errorData['message'] ?? 'Failed to delete comment');
       }
-
-      await _supabase.from('comments').delete().eq('id', int.parse(commentId));
     } catch (e) {
       debugPrint('Delete comment error: $e');
       rethrow;
@@ -215,33 +88,12 @@ class CommentService {
   /// Get a single comment by ID
   Future<Comment?> getCommentById(String commentId) async {
     try {
-      final response = await _supabase
-          .from('comments')
-          .select('''
-            *,
-            profiles:user_id (
-              username,
-              avatar_url
-            )
-          ''')
-          .eq('id', int.parse(commentId))
-          .single();
-
-      return Comment.fromJson({
-        'id': response['id'].toString(),
-        'issue_id': response['issue_id'],
-        'user_id': response['user_id'],
-        'content': response['content'],
-        'created_at': response['created_at'],
-        'user': {
-          'id': response['user_id'],
-          'username': response['profiles']?['username'] ?? 'Unknown',
-          'email': '',
-          'role': 'user',
-          'avatar_url': response['profiles']?['avatar_url'],
-          'created_at': response['created_at'],
-        },
-      });
+      final response = await _apiClient.get('/comments/$commentId');
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        return Comment.fromJson(data);
+      }
+      return null;
     } catch (e) {
       debugPrint('Get comment by id error: $e');
       return null;
