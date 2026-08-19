@@ -7,6 +7,20 @@ const auth = require('../middleware/auth');
 const Issue = require('../models/Issue');
 const Vote = require('../models/Vote');
 const Upvote = require('../models/Upvote');
+const jwt = require('jsonwebtoken');
+
+const getUserIdFromRequest = (req) => {
+  const authHeader = req.header('Authorization');
+  if (!authHeader) return null;
+  const token = authHeader.replace('Bearer ', '');
+  if (!token) return null;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'super_secret_jwt_key_civic_connect_123');
+    return decoded.user.id;
+  } catch (err) {
+    return null;
+  }
+};
 
 // Ensure uploads folder exists
 const uploadDir = path.join(__dirname, '../uploads');
@@ -38,7 +52,7 @@ const getDistance = (lat1, lon1, lat2, lon2) => {
       Math.cos((lat2 * Math.PI) / 180) *
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - c));
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   if (isNaN(c)) return 0;
   return R * c;
 };
@@ -121,6 +135,16 @@ router.get('/nearby', async (req, res) => {
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, maxLimit);
 
+    const userId = getUserIdFromRequest(req);
+    const userVotesMap = {};
+    if (userId && nearby.length > 0) {
+      const issueIds = nearby.map(issue => issue._id);
+      const userVotes = await Vote.find({ issueId: { $in: issueIds }, userId });
+      userVotes.forEach(vote => {
+        userVotesMap[vote.issueId.toString()] = vote.isAgree ? 'agree' : 'disagree';
+      });
+    }
+
     // Map fields to match Supabase expectations (agree_count, disagree_count, etc.)
     const formatted = nearby.map((issue) => ({
       id: issue._id.toString(),
@@ -136,6 +160,7 @@ router.get('/nearby', async (req, res) => {
       status: issue.status,
       agree_count: issue.agreeCount,
       disagree_count: issue.disagreeCount,
+      user_vote: userVotesMap[issue._id.toString()] || null,
       timestamp: issue.createdAt,
       created_at: issue.createdAt,
       user: {
@@ -195,6 +220,15 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Issue not found' });
     }
 
+    const userId = getUserIdFromRequest(req);
+    let userVote = null;
+    if (userId) {
+      const voteObj = await Vote.findOne({ issueId: issue.id, userId });
+      if (voteObj) {
+        userVote = voteObj.isAgree ? 'agree' : 'disagree';
+      }
+    }
+
     const formatted = {
       id: issue._id.toString(),
       user_id: issue.userId ? issue.userId._id.toString() : '',
@@ -209,6 +243,7 @@ router.get('/:id', async (req, res) => {
       status: issue.status,
       agree_count: issue.agreeCount,
       disagree_count: issue.disagreeCount,
+      user_vote: userVote,
       timestamp: issue.createdAt,
       created_at: issue.createdAt,
       user: {

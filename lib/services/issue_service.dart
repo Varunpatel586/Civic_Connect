@@ -177,11 +177,11 @@ class IssueService {
         };
       } else {
         final errorData = jsonDecode(response.body);
-        return {'success': false, 'error': errorData['message'] ?? 'Voting failed'};
+        throw Exception(errorData['message'] ?? 'Voting failed');
       }
     } catch (e) {
       debugPrint('Vote on issue error: $e');
-      return {'success': false, 'error': e.toString()};
+      rethrow;
     }
   }
 

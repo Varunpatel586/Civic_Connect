@@ -1,5 +1,4 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:civic_connect/services/comment_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -9,6 +8,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 import '../models/models.dart';
 import '../providers/app_provider.dart';
 import '../widgets/comment_tile.dart';
+import '../services/api_client.dart';
 
 class IssueDetailScreen extends StatefulWidget {
   final String issueId;
@@ -76,9 +76,6 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
       if (_issue?.title == 'Loading...') {
         _issue = await appProvider.getIssueById(widget.issueId);
       }
-
-      // Load comments
-      await _loadComments();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -240,7 +237,7 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
                         AspectRatio(
                           aspectRatio: 16 / 9,
                           child: CachedNetworkImage(
-                            imageUrl: _issue!.imageUrl,
+                            imageUrl: ApiClient().normalizeUrl(_issue!.imageUrl),
                             fit: BoxFit.cover,
                             placeholder: (context, url) => Container(
                               color: Colors.grey[200],

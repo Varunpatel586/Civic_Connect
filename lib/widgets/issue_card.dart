@@ -4,16 +4,19 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/app_provider.dart';
+import '../services/api_client.dart';
 
 class IssueCard extends StatelessWidget {
   final Issue issue;
   final VoidCallback? onTap;
+  final VoidCallback? onVote;
   final bool showActions;
 
   const IssueCard({
     super.key,
     required this.issue,
     this.onTap,
+    this.onVote,
     this.showActions = true,
   });
 
@@ -36,7 +39,7 @@ class IssueCard extends StatelessWidget {
               child: AspectRatio(
                 aspectRatio: 16 / 9,
                 child: CachedNetworkImage(
-                  imageUrl: issue.imageUrl,
+                  imageUrl: ApiClient().normalizeUrl(issue.imageUrl),
                   fit: BoxFit.cover,
                   placeholder: (context, url) => Container(
                     color: Colors.grey[200],
@@ -176,49 +179,79 @@ class IssueCard extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             // Agree Button
-            TextButton.icon(
-              onPressed: () => _handleVote(context, appProvider, true),
-              icon: const Icon(Icons.thumb_up_outlined, size: 20),
-              label: Text(
-                'Agree (${issue.agreeCount})',
-                style: TextStyle(
+            Expanded(
+              child: TextButton.icon(
+                onPressed: () => _handleVote(context, appProvider, true),
+                icon: Icon(
+                  issue.userVote == 'agree' ? Icons.thumb_up : Icons.thumb_up_outlined,
+                  size: 16,
                   color: issue.userVote == 'agree'
                       ? Theme.of(context).primaryColor
-                      : null,
+                      : Colors.grey[700],
                 ),
-              ),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.grey[700],
+                label: Text(
+                  'Agree (${issue.agreeCount})',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: issue.userVote == 'agree'
+                        ? Theme.of(context).primaryColor
+                        : Colors.grey[700],
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                ),
               ),
             ),
 
             // Disagree Button
-            TextButton.icon(
-              onPressed: () => _handleVote(context, appProvider, false),
-              icon: const Icon(Icons.thumb_down_outlined, size: 20),
-              label: Text(
-                'Disagree (${issue.disagreeCount})',
-                style: TextStyle(
+            Expanded(
+              child: TextButton.icon(
+                onPressed: () => _handleVote(context, appProvider, false),
+                icon: Icon(
+                  issue.userVote == 'disagree' ? Icons.thumb_down : Icons.thumb_down_outlined,
+                  size: 16,
                   color: issue.userVote == 'disagree'
                       ? Colors.red
-                      : null,
+                      : Colors.grey[700],
                 ),
-              ),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.grey[700],
+                label: Text(
+                  'Disagree (${issue.disagreeCount})',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: issue.userVote == 'disagree'
+                        ? Colors.red
+                        : Colors.grey[700],
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                ),
               ),
             ),
 
             // Comment Button
-            TextButton.icon(
-              onPressed: () {
-                // Navigate to issue detail screen
-                if (onTap != null) onTap!();
-              },
-              icon: const Icon(Icons.comment_outlined, size: 20),
-              label: const Text('Comment'),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.grey[700],
+            Expanded(
+              child: TextButton.icon(
+                onPressed: () {
+                  // Navigate to issue detail screen
+                  if (onTap != null) onTap!();
+                },
+                icon: const Icon(Icons.comment_outlined, size: 16),
+                label: const Text(
+                  'Comment',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12),
+                ),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.grey[700],
+                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                ),
               ),
             ),
           ],
@@ -244,7 +277,11 @@ class IssueCard extends StatelessWidget {
     try {
       await appProvider.voteOnIssue(issue.id, isAgree);
       // Refresh the issue data after voting
-      if (onTap != null) onTap!();
+      if (onVote != null) {
+        onVote!();
+      } else if (onTap != null) {
+        onTap!();
+      }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

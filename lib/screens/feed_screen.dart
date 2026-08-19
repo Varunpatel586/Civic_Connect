@@ -6,6 +6,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
+import '../models/models.dart';
+import '../widgets/issue_card.dart';
+import 'issue_detail_screen.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -45,12 +48,16 @@ class _FeedScreenState extends State<FeedScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final response = await _apiClient.get('/issues/nearby?lat=0&lng=0&radius_km=10000');
+      final response = await _apiClient.get('/issues/nearby?lat=0&lng=0&radius_km=20000');
 
       List<Map<String, dynamic>> posts = [];
 
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);
+        debugPrint('FeedScreen loaded ${data.length} posts from server.');
+        if (data.isNotEmpty) {
+          debugPrint('First post data: ${data.first}');
+        }
         posts = List<Map<String, dynamic>>.from(data);
       } else {
         // Add placeholder posts if no posts found
@@ -127,7 +134,8 @@ class _FeedScreenState extends State<FeedScreen> {
           _isLoading = false;
         });
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('FeedScreen API fetch failed: $e\n$stackTrace');
       if (mounted) {
         setState(() {
           _posts = [
@@ -199,14 +207,6 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
-  void _showPostDetails(Map<String, dynamic> post) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => PostDetailsBottomSheet(post: post),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -227,199 +227,21 @@ class _FeedScreenState extends State<FeedScreen> {
       itemCount: _posts.length,
       itemBuilder: (context, index) {
         final post = _posts[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 16.0),
-          elevation: 2,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: InkWell(
-            onTap: () => _showPostDetails(post),
-            borderRadius: BorderRadius.circular(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Image
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(12),
-                  ),
-                  child: post['image_url'] != null
-                      ? AspectRatio(
-                          aspectRatio: 16 / 9,
-                          child: Image.network(
-                            post['image_url'],
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                Container(
-                                  color: Colors.grey[200],
-                                  child: const Center(
-                                    child: Icon(Icons.broken_image, size: 48),
-                                  ),
-                                ),
-                          ),
-                        )
-                      : Container(
-                          height: 200,
-                          color: Colors.grey[200],
-                          child: const Center(
-                            child: Icon(Icons.image_not_supported, size: 48),
-                          ),
-                        ),
-                ),
-
-                // Post content
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Title and upvotes
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              post['title'] ?? 'No Title',
-                              style: GoogleFonts.poppins(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.thumb_up,
-                                size: 16,
-                                color: Colors.green,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${post['upvotes'] ?? 0}',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      // Location
-                      if (post['location'] != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8.0),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.location_on,
-                                size: 16,
-                                color: Colors.grey[600],
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                post['location'],
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                      // Description
-                      Text(
-                        post['description'] ?? '',
-                        style: GoogleFonts.poppins(
-                          fontSize: 15,
-                          color: Colors.grey[800],
-                          height: 1.4,
-                        ),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-
-                      // Author and date
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            backgroundColor: Colors.green[100],
-                            child: Text(
-                              post['profiles']?['username']
-                                      ?.substring(0, 1)
-                                      .toUpperCase() ??
-                                  '?',
-                              style: const TextStyle(color: Colors.green),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                post['profiles']?['username'] ?? 'Anonymous',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              if (post['created_at'] != null)
-                                Text(
-                                  _formatDate(post['created_at']),
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+        final issue = Issue.fromJson(post);
+        return IssueCard(
+          issue: issue,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => IssueDetailScreen(issueId: issue.id),
+              ),
+            ).then((_) => _fetchApprovedPosts());
+          },
+          onVote: () => _fetchApprovedPosts(),
         );
       },
     );
-  }
-
-  String _formatDate(String? dateString) {
-    if (dateString == null) return '';
-    try {
-      final date = DateTime.parse(dateString);
-      return '${_getMonth(date.month)} ${date.day}, ${date.year}';
-    } catch (e) {
-      return dateString;
-    }
-  }
-
-  String _getMonth(int month) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return months[month - 1];
   }
 }
 
@@ -547,7 +369,7 @@ class _PostDetailsBottomSheetState extends State<PostDetailsBottomSheet> {
           'content': commentText,
           'created_at': DateTime.now().toIso8601String(),
           'profiles': {
-            'username': user.email?.split('@').first ?? 'User',
+            'username': user.email.split('@').first,
             'avatar_url': null,
           },
         };
@@ -661,18 +483,6 @@ class _PostDetailsBottomSheetState extends State<PostDetailsBottomSheet> {
     super.dispose();
   }
 
-  // Clear all placeholder comments (for testing)
-  Future<void> _clearPlaceholderComments() async {
-    if (widget.post['is_placeholder'] == true) {
-      await _prefs.remove('${_commentsKey}_${widget.post['id']}');
-      if (mounted) {
-        setState(() {
-          _comments = [];
-        });
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
@@ -708,161 +518,176 @@ class _PostDetailsBottomSheetState extends State<PostDetailsBottomSheet> {
                   ),
                 ),
               ),
-              Text(
-                widget.post['title'] ?? 'No Title',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              if (widget.post['image_url'] != null)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    widget.post['image_url'],
-                    height: 200,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      height: 200,
-                      color: Colors.grey[200],
-                      child: const Center(child: Icon(Icons.broken_image)),
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 16),
-              Text(
-                widget.post['description'] ?? '',
-                style: GoogleFonts.poppins(fontSize: 16),
-              ),
-              const SizedBox(height: 16),
-              const Divider(height: 32, thickness: 1.5),
-              Row(
-                children: [
-                  Text(
-                    'Comments',
-                    style: GoogleFonts.poppins(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _comments.length.toString(),
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.green,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
               Expanded(
-                child: _isLoadingComments
-                    ? const Center(child: CircularProgressIndicator())
-                    : _comments.isEmpty
-                    ? Center(
-                        child: Text(
-                          'No comments yet',
-                          style: GoogleFonts.poppins(color: Colors.grey),
-                        ),
-                      )
-                    : ListView.builder(
-                        controller: scrollController,
-                        itemCount: _comments.length,
-                        itemBuilder: (context, index) {
-                          final comment = _comments[index];
-                          final profile = comment['profiles'] ?? {};
-                          final createdAt = comment['created_at'] != null
-                              ? DateTime.parse(comment['created_at'])
-                              : null;
-                          final timeAgo = createdAt != null
-                              ? _timeAgo(createdAt)
-                              : 'Just now';
-
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: BorderSide(
-                                color: Colors.grey.shade200,
-                                width: 1,
-                              ),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      CircleAvatar(
-                                        radius: 18,
-                                        backgroundColor: Colors.green,
-                                        child: Text(
-                                          profile['username']
-                                                  ?.substring(0, 1)
-                                                  .toUpperCase() ??
-                                              '?',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              profile['username'] ??
-                                                  'Anonymous',
-                                              style: GoogleFonts.poppins(
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                            Text(
-                                              timeAgo,
-                                              style: GoogleFonts.poppins(
-                                                fontSize: 12,
-                                                color: Colors.grey[600],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    comment['content'] ?? '',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 14,
-                                      height: 1.4,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+                child: ListView(
+                  controller: scrollController,
+                  padding: EdgeInsets.zero,
+                  children: [
+                    Text(
+                      widget.post['title'] ?? 'No Title',
+                      style: GoogleFonts.poppins(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (widget.post['image_url'] != null)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(
+                          _apiClient.normalizeUrl(widget.post['image_url'] ?? ''),
+                          height: 200,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => Container(
+                            height: 200,
+                            color: Colors.grey[200],
+                            child: const Center(child: Icon(Icons.broken_image)),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+                    Text(
+                      widget.post['description'] ?? '',
+                      style: GoogleFonts.poppins(fontSize: 16),
+                    ),
+                    const SizedBox(height: 16),
+                    const Divider(height: 32, thickness: 1.5),
+                    Row(
+                      children: [
+                        Text(
+                          'Comments',
+                          style: GoogleFonts.poppins(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            _comments.length.toString(),
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.green,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _isLoadingComments
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 20.0),
+                              child: CircularProgressIndicator(),
+                            ),
+                          )
+                        : _comments.isEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 20.0),
+                                  child: Text(
+                                    'No comments yet',
+                                    style: GoogleFonts.poppins(color: Colors.grey),
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                itemCount: _comments.length,
+                                itemBuilder: (context, index) {
+                                  final comment = _comments[index];
+                                  final profile = comment['user'] ?? comment['profiles'] ?? {};
+                                  final createdAt = comment['created_at'] != null
+                                      ? DateTime.parse(comment['created_at'])
+                                      : null;
+                                  final timeAgo = createdAt != null
+                                      ? _timeAgo(createdAt)
+                                      : 'Just now';
+
+                                  return Card(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      side: BorderSide(
+                                        color: Colors.grey.shade200,
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(12),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              CircleAvatar(
+                                                radius: 18,
+                                                backgroundColor: Colors.green,
+                                                child: Text(
+                                                  profile['username']
+                                                          ?.substring(0, 1)
+                                                          .toUpperCase() ??
+                                                      '?',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      profile['username'] ??
+                                                          'Anonymous',
+                                                      style: GoogleFonts.poppins(
+                                                        fontWeight: FontWeight.w600,
+                                                        fontSize: 14,
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      timeAgo,
+                                                      style: GoogleFonts.poppins(
+                                                        fontSize: 12,
+                                                        color: Colors.grey[600],
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            comment['content'] ?? '',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 14,
+                                              height: 1.4,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                  ],
+                ),
               ),
               const SizedBox(height: 16),
               Container(

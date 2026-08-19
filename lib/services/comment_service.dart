@@ -23,6 +23,21 @@ class CommentService {
     }
   }
 
+  /// Fetches all comments by the current user
+  Future<List<Map<String, dynamic>>> getUserComments() async {
+    try {
+      final response = await _apiClient.get('/comments/user');
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        return List<Map<String, dynamic>>.from(data);
+      }
+      return [];
+    } catch (e) {
+      debugPrint('Get user comments error: $e');
+      return [];
+    }
+  }
+
   /// Adds a new comment to an issue
   Future<Comment> addComment({
     required String issueId,

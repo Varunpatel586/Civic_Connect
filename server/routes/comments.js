@@ -4,6 +4,30 @@ const auth = require('../middleware/auth');
 const Comment = require('../models/Comment');
 const Issue = require('../models/Issue');
 
+// @route   GET api/comments/user
+// @desc    Get all comments by the current user
+// @access  Private
+router.get('/user', auth, async (req, res) => {
+  try {
+    const comments = await Comment.find({ userId: req.user.id })
+      .populate('issueId', 'title')
+      .sort({ createdAt: -1 });
+
+    const formatted = comments.map((comment) => ({
+      id: comment._id.toString(),
+      issue_id: comment.issueId ? comment.issueId._id.toString() : '',
+      issue_title: comment.issueId ? comment.issueId.title : 'Deleted Issue',
+      content: comment.content,
+      created_at: comment.createdAt,
+    }));
+
+    res.json(formatted);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+
 // @route   GET api/comments/issue/:issueId
 // @desc    Get all comments for an issue
 // @access  Public

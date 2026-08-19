@@ -6,6 +6,9 @@ import 'package:timeago/timeago.dart' as timeago;
 import '../providers/app_provider.dart';
 import '../services/auth_service.dart';
 import '../models/models.dart';
+import '../widgets/issue_card.dart';
+import '../services/comment_service.dart';
+import 'issue_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -112,7 +115,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Widget _buildProfileHeader(UserProfile user, String? avatarUrl) {
+  Widget _buildProfileHeader(UserProfile user, String? avatarUrl, int postCount) {
     return Column(
       children: [
         Stack(
@@ -120,10 +123,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             CircleAvatar(
               radius: 60,
-              backgroundImage: avatarUrl != null
+              backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
                   ? NetworkImage(avatarUrl) as ImageProvider
-                  : const AssetImage('assets/images/default_avatar.png'),
-              child: avatarUrl == null
+                  : null,
+              child: (avatarUrl == null || avatarUrl.isEmpty)
                   ? const Icon(Icons.person, size: 60, color: Colors.white)
                   : null,
             ),
@@ -155,7 +158,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _buildStatColumn('Posts', '24'),
+            _buildStatColumn('Posts', postCount.toString()),
             _buildStatColumn('Following', '156'),
             _buildStatColumn('Followers', '1.2K'),
           ],
@@ -265,7 +268,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: Column(
                     children: [
                       const SizedBox(height: 20),
-                      _buildProfileHeader(user, avatarUrl),
+                      _buildProfileHeader(user, avatarUrl, appProvider.userIssues.length),
                       const SizedBox(height: 16),
                       _buildActionButtons(),
                     ],
@@ -331,9 +334,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   style: TextStyle(color: Colors.grey, fontSize: 14),
                                 ),
                                 Text(
-                                  joinDate != null 
-                                      ? timeago.format(joinDate, allowFromNow: true)
-                                      : 'Recently',
+                                  timeago.format(joinDate, allowFromNow: true),
                                   style: const TextStyle(fontWeight: FontWeight.bold),
                                 ),
                               ],
@@ -354,7 +355,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Icons.history,
                         'My Activity',
                         () {
-                          // Navigate to activity
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const MyActivityScreen(),
+                            ),
+                          );
                         },
                       ),
                       _buildMenuOption(
@@ -414,6 +420,179 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ],
               ],
             ),
+    );
+  }
+}
+
+class MyActivityScreen extends StatefulWidget {
+  const MyActivityScreen({super.key});
+
+  @override
+  State<MyActivityScreen> createState() => _MyActivityScreenState();
+}
+
+class _MyActivityScreenState extends State<MyActivityScreen> {
+  final CommentService _commentService = CommentService();
+  List<Map<String, dynamic>> _userComments = [];
+  bool _isLoadingComments = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserComments();
+  }
+
+  Future<void> _fetchUserComments() async {
+    try {
+      final comments = await _commentService.getUserComments();
+      if (mounted) {
+        setState(() {
+          _userComments = comments;
+          _isLoadingComments = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading user comments: $e');
+      if (mounted) {
+        setState(() => _isLoadingComments = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appProvider = Provider.of<AppProvider>(context);
+    final userIssues = appProvider.userIssues;
+
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.green,
+          iconTheme: const IconThemeData(color: Colors.white),
+          title: const Text('My Activity', style: TextStyle(color: Colors.white)),
+          bottom: const TabBar(
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
+            indicatorColor: Colors.white,
+            tabs: [
+              Tab(text: 'My Posts'),
+              Tab(text: 'My Comments'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            // Tab 1: My Posts
+            userIssues.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.post_add, size: 64, color: Colors.grey[400]),
+                        const SizedBox(height: 16),
+                        Text(
+                          'You haven\'t reported any issues yet',
+                          style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: userIssues.length,
+                    itemBuilder: (context, index) {
+                      final issue = userIssues[index];
+                      return IssueCard(
+                        issue: issue,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => IssueDetailScreen(issueId: issue.id),
+                            ),
+                          ).then((_) => appProvider.initialize());
+                        },
+                        onVote: () => appProvider.initialize(),
+                      );
+                    },
+                  ),
+
+            // Tab 2: My Comments
+            _isLoadingComments
+                ? const Center(child: CircularProgressIndicator())
+                : _userComments.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.comment_bank_outlined, size: 64, color: Colors.grey[400]),
+                            const SizedBox(height: 16),
+                            Text(
+                              'You haven\'t commented on any issues yet',
+                              style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _userComments.length,
+                        itemBuilder: (context, index) {
+                          final comment = _userComments[index];
+                          final createdAt = comment['created_at'] != null
+                              ? DateTime.parse(comment['created_at'])
+                              : DateTime.now();
+
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(color: Colors.grey.shade200),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          'On: ${comment['issue_title']}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.green,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        timeago.format(createdAt),
+                                        style: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    comment['content'] ?? '',
+                                    style: const TextStyle(fontSize: 15),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -13,6 +13,20 @@ class ApiClient {
 
   String get baseUrl =>
       dotenv.env['API_BASE_URL'] ?? 'http://localhost:5000/api';
+
+  String normalizeUrl(String url) {
+    if (url.isEmpty) return url;
+    if (url.contains('localhost')) {
+      try {
+        final uri = Uri.parse(baseUrl);
+        return url.replaceAll('localhost', uri.host);
+      } catch (e) {
+        debugPrint('Error parsing baseUrl for normalization: $e');
+      }
+    }
+    return url;
+  }
+
   String? _token;
 
   Future<String?> get token async {
