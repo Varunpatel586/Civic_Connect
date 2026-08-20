@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/location_service.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../theme/app_typography.dart';
 import 'issue_submission_screen.dart';
 
@@ -227,7 +228,11 @@ class _CameraScreenState extends State<CameraScreen>
             child: Row(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white, size: 26),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: Colors.white,
+                    size: 26,
+                  ),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 const Spacer(),
@@ -270,13 +275,12 @@ class _CameraScreenState extends State<CameraScreen>
                       ),
                       onPressed: _toggleFlash,
                     ),
-                    _ShutterButton(
-                      isCapturing: _isCapturing,
-                      onTap: _capture,
-                    ),
+                    _ShutterButton(isCapturing: _isCapturing, onTap: _capture),
                     IconButton(
                       iconSize: 28,
-                      color: _cameras.length > 1 ? Colors.white : Colors.white38,
+                      color: _cameras.length > 1
+                          ? Colors.white
+                          : Colors.white38,
                       icon: const Icon(Icons.cameraswitch_outlined),
                       onPressed: _cameras.length > 1 ? _flipCamera : null,
                     ),
@@ -322,26 +326,28 @@ class _LocationPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = hasFix ? Colors.white : AppColors.amber700;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(3),
+        borderRadius: BorderRadius.circular(AppTheme.badgeRadius),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            hasFix ? Icons.my_location : Icons.location_searching,
-            size: 12,
-            color: hasFix ? Colors.white : AppColors.amber700,
+            hasFix ? Icons.my_location_rounded : Icons.location_searching,
+            size: 13,
+            color: color,
           ),
-          const SizedBox(width: 5),
+          const SizedBox(width: 7),
           Text(
-            hasFix ? 'LOCATION READY' : 'FINDING LOCATION',
-            style: AppTypography.badge(
-              color: hasFix ? Colors.white : AppColors.amber700,
-            ),
+            hasFix ? 'Location ready' : 'Finding location',
+            style: AppTypography.sectionLabel(
+              color: color,
+            ).copyWith(fontSize: 11.5),
           ),
         ],
       ),

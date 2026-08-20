@@ -6,6 +6,7 @@ import '../models/ward_stats.dart';
 import '../providers/app_provider.dart';
 import '../services/admin_service.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../theme/app_typography.dart';
 import '../utils/complaint_reference.dart';
 import '../utils/issue_categories.dart';
@@ -84,10 +85,6 @@ class _AdminConsoleScreenState extends State<AdminConsoleScreen> {
   Future<void> _openStatusSheet(Issue issue) async {
     final result = await showModalBottomSheet<_StatusChange>(
       context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
-      ),
       isScrollControlled: true,
       builder: (_) => _StatusSheet(issue: issue),
     );
@@ -120,33 +117,39 @@ class _AdminConsoleScreenState extends State<AdminConsoleScreen> {
     final address = context.select<AppProvider, String?>(
       (p) => p.currentAddress,
     );
-    final jurisdiction =
-        ComplaintReference.locality(address)?.toUpperCase() ?? 'ALL WARDS';
+    final jurisdiction = ComplaintReference.locality(address) ?? 'All wards';
 
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
+        title: Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
           children: [
-            Text(
-              'Municipal console',
-              style: Theme.of(context).appBarTheme.titleTextStyle,
+            Flexible(
+              child: Text(
+                'Municipal console',
+                style: Theme.of(context).appBarTheme.titleTextStyle,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            Padding(
-              padding: const EdgeInsets.only(top: 1),
+            const SizedBox(width: 9),
+            Flexible(
               child: Text(
                 jurisdiction,
-                style: AppTypography.badge(color: AppColors.navy200),
+                style: Theme.of(context).textTheme.bodySmall,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: _isLoading ? null : _load,
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: IconButton(
+              icon: const Icon(Icons.refresh_rounded, size: 21),
+              tooltip: 'Refresh',
+              onPressed: _isLoading ? null : _load,
+            ),
           ),
         ],
       ),
@@ -166,11 +169,10 @@ class _AdminConsoleScreenState extends State<AdminConsoleScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
+        padding: const EdgeInsets.only(bottom: 28),
         children: [
           _MetricGrid(stats: _stats),
-          if (_stats.byCategory.isNotEmpty)
-            _CategoryBreakdown(stats: _stats),
+          if (_stats.byCategory.isNotEmpty) _CategoryBreakdown(stats: _stats),
           _QueueHeader(
             count: _queue.length,
             selected: _statusFilter,
@@ -196,8 +198,11 @@ class _AdminConsoleScreenState extends State<AdminConsoleScreen> {
   }
 }
 
-/// Four counters, two across. Overdue carries the alert palette because it is
-/// the only one that demands action rather than reporting a position.
+/// Four counters on one card.
+///
+/// The old grid was four full-bleed cells split by 1px gaps, which read as a
+/// spreadsheet. One card with generous internal spacing says the same thing,
+/// and lets Overdue stand out by colour alone instead of by a filled cell.
 class _MetricGrid extends StatelessWidget {
   final WardStats stats;
 
@@ -207,51 +212,57 @@ class _MetricGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final avg = stats.avgCloseDays;
 
-    return Container(
-      color: AppColors.slate100,
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _Metric(
-                  value: '${stats.open}',
-                  label: 'OPEN',
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Container(
+        decoration: AppTheme.cardDecoration,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+        child: Column(
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _Metric(value: '${stats.open}', label: 'Open'),
                 ),
-              ),
-              Expanded(
-                child: _Metric(
-                  value: '${stats.overdue}',
-                  label: 'OVERDUE',
-                  palette: stats.overdue > 0 ? StatusColors.overdue : null,
+                Expanded(
+                  child: _Metric(
+                    value: '${stats.overdue}',
+                    label: 'Overdue',
+                    color: stats.overdue > 0
+                        ? StatusColors.overdue.foreground
+                        : null,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: _Metric(
-                  value: '${stats.resolved}',
-                  label: 'RESOLVED',
-                  valueColor: StatusColors.resolved.foreground,
+              ],
+            ),
+            const SizedBox(height: 22),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _Metric(
+                    value: '${stats.resolved}',
+                    label: 'Resolved',
+                    color: StatusColors.resolved.foreground,
+                  ),
                 ),
-              ),
-              Expanded(
-                child: _Metric(
-                  value: avg == null ? '—' : avg.toStringAsFixed(1),
-                  unit: avg == null ? null : 'd',
-                  label: 'AVG CLOSE',
-                  // Says what the average is actually built from, so the number
-                  // can be defended when someone asks.
-                  footnote: avg == null
-                      ? 'no closures yet'
-                      : 'over ${stats.measuredClosures} closed',
+                Expanded(
+                  child: _Metric(
+                    value: avg == null ? '—' : avg.toStringAsFixed(1),
+                    unit: avg == null ? null : 'd',
+                    label: 'Avg close',
+                    // Says what the average is built from, so the number can be
+                    // defended when someone asks.
+                    footnote: avg == null
+                        ? 'no closures yet'
+                        : 'over ${stats.measuredClosures} closed',
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -262,58 +273,42 @@ class _Metric extends StatelessWidget {
   final String? unit;
   final String label;
   final String? footnote;
-  final Color? valueColor;
-  final StatusPalette? palette;
+  final Color? color;
 
   const _Metric({
     required this.value,
     required this.label,
     this.unit,
     this.footnote,
-    this.valueColor,
-    this.palette,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
-    final fg = palette?.foreground ?? valueColor ?? AppColors.navy900;
+    final fg = color ?? AppColors.navy900;
 
-    return Container(
-      color: palette?.background ?? AppColors.surface,
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 13),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(value, style: AppTypography.metric(color: fg)),
-              if (unit != null)
-                Text(
-                  unit!,
-                  style: AppTypography.metric(color: fg).copyWith(fontSize: 15),
-                ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: AppTypography.badge(
-              color: palette?.foreground ?? AppColors.slate600,
-            ),
-          ),
-          if (footnote != null) ...[
-            const SizedBox(height: 3),
-            Text(
-              footnote!,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(fontSize: 10),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(value, style: AppTypography.metric(color: fg)),
+            if (unit != null)
+              Text(
+                unit!,
+                style: AppTypography.metric(color: fg).copyWith(fontSize: 16),
+              ),
           ],
+        ),
+        const SizedBox(height: 6),
+        Text(label, style: AppTypography.meta(color: AppColors.slate600)),
+        if (footnote != null) ...[
+          const SizedBox(height: 2),
+          Text(footnote!, style: AppTypography.meta().copyWith(fontSize: 11.5)),
         ],
-      ),
+      ],
     );
   }
 }
@@ -332,62 +327,72 @@ class _CategoryBreakdown extends StatelessWidget {
     final rows = stats.byCategory.take(5).toList();
     final max = rows.fold<int>(0, (m, r) => r.count > m ? r.count : m);
 
-    return Container(
-      width: double.infinity,
-      color: AppColors.surface,
-      margin: const EdgeInsets.only(top: 1),
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('BY CATEGORY', style: AppTypography.sectionLabel()),
-          const SizedBox(height: 12),
-          for (final row in rows) ...[
-            Padding(
-              padding: const EdgeInsets.only(bottom: 9),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 92,
-                    child: Text(
-                      IssueCategories.labelFor(row.category),
-                      style: Theme.of(context).textTheme.bodySmall,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Container(
+        width: double.infinity,
+        decoration: AppTheme.cardDecoration,
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'By category',
+              style: AppTypography.sectionLabel(color: AppColors.slate600),
+            ),
+            const SizedBox(height: 14),
+            for (final row in rows) ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 96,
+                      child: Text(
+                        IssueCategories.labelFor(row.category),
+                        style: AppTypography.meta(color: AppColors.slate600),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(2),
-                      child: LinearProgressIndicator(
-                        value: max == 0 ? 0 : row.count / max,
-                        minHeight: 7,
-                        backgroundColor: AppColors.slate100,
-                        valueColor: const AlwaysStoppedAnimation(
-                          AppColors.navy700,
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: LinearProgressIndicator(
+                          value: max == 0 ? 0 : row.count / max,
+                          minHeight: 6,
+                          backgroundColor: AppColors.slate100,
+                          valueColor: const AlwaysStoppedAnimation(
+                            AppColors.navy700,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  SizedBox(
-                    width: 30,
-                    child: Text(
-                      '${row.count}',
-                      textAlign: TextAlign.right,
-                      style: AppTypography.inlineCount(),
+                    SizedBox(
+                      width: 32,
+                      child: Text(
+                        '${row.count}',
+                        textAlign: TextAlign.right,
+                        style: AppTypography.inlineCount(
+                          color: AppColors.slate600,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
 }
 
 /// Queue title and the status filters.
+///
+/// Sits on the canvas rather than in a white strip of its own: it names the
+/// list of cards below it, and a heading does not need a surface to do that.
 class _QueueHeader extends StatelessWidget {
   final int count;
   final String? selected;
@@ -408,48 +413,57 @@ class _QueueHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.surface,
-      margin: const EdgeInsets.only(top: 1),
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 26, 16, 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
             children: [
-              Text('TRIAGE QUEUE', style: AppTypography.sectionLabel()),
-              const Spacer(),
+              Text(
+                'Triage queue',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(width: 8),
               Text('$count', style: AppTypography.inlineCount()),
             ],
           ),
-          const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (final entry in _filters.entries)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: _FilterChip(
-                      label: entry.value,
-                      selected: selected == entry.key,
-                      onTap: () => onSelected(entry.key),
-                    ),
+        ),
+        const SizedBox(height: 3),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            'Overdue first, then most-supported, then oldest.',
+            style: AppTypography.meta(),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              for (final entry in _filters.entries)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: _FilterChip(
+                    label: entry.value,
+                    selected: selected == entry.key,
+                    onTap: () => onSelected(entry.key),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
-          const SizedBox(height: 2),
-          Text(
-            'Ranked by urgency: overdue first, then most-supported, then oldest.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 10),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
+/// A status filter. Filled when chosen, a quiet tint when not — the outline
+/// it used to wear was doing the same job with more lines.
 class _FilterChip extends StatelessWidget {
   final String label;
   final bool selected;
@@ -463,23 +477,20 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(3),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.navy900 : AppColors.surface,
-          border: Border.all(
-            color: selected ? AppColors.navy900 : AppColors.slate200,
-          ),
-          borderRadius: BorderRadius.circular(3),
-        ),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontSize: 12,
-            color: selected ? Colors.white : AppColors.slate600,
+    return Material(
+      color: selected ? AppColors.navy900 : AppColors.slate100,
+      borderRadius: BorderRadius.circular(AppTheme.radius),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: selected ? Colors.white : AppColors.slate600,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            ),
           ),
         ),
       ),
@@ -488,6 +499,11 @@ class _FilterChip extends StatelessWidget {
 }
 
 /// One complaint awaiting action.
+///
+/// A card like the ones the citizen sees, minus the photograph — an officer
+/// triaging thirty of these needs the title, the clock, and a way in, and the
+/// picture belongs on the detail screen. Overdue work tints the whole card,
+/// which is the one place colour is allowed to carry across a surface.
 class _QueueRow extends StatelessWidget {
   final Issue issue;
   final VoidCallback onChangeStatus;
@@ -503,71 +519,80 @@ class _QueueRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final sla = SlaPolicy.evaluate(issue);
 
-    return Container(
-      color: sla.isOverdue
-          ? StatusColors.overdue.background
-          : AppColors.surface,
-      margin: const EdgeInsets.only(top: 1),
-      child: InkWell(
-        onTap: onOpen,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 11, 8, 11),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: DecoratedBox(
+        decoration: AppTheme.cardDecoration.copyWith(
+          color: sla.isOverdue
+              ? StatusColors.overdue.background
+              : AppColors.surface,
+        ),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onOpen,
+            borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            issue.title,
-                            style: Theme.of(context).textTheme.titleSmall,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                issue.title,
+                                style: Theme.of(context).textTheme.titleSmall,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            StatusChip(
+                              status: issue.status,
+                              overdue: sla.isOverdue,
+                              dense: true,
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        StatusChip(
-                          status: issue.status,
-                          overdue: sla.isOverdue,
-                          dense: true,
+                        const SizedBox(height: 7),
+                        Row(
+                          children: [
+                            Text(
+                              ComplaintReference.format(issue),
+                              style: AppTypography.recordId(),
+                            ),
+                            const SizedBox(width: 10),
+                            Flexible(child: SlaLabel(sla: sla)),
+                            const SizedBox(width: 10),
+                            const Icon(
+                              Icons.arrow_upward_rounded,
+                              size: 13,
+                              color: AppColors.slate400,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              '${issue.agreeCount}',
+                              style: AppTypography.inlineCount(),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                    const SizedBox(height: 5),
-                    Row(
-                      children: [
-                        Text(
-                          ComplaintReference.format(issue),
-                          style: AppTypography.recordId(),
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(child: SlaLabel(sla: sla)),
-                        const SizedBox(width: 8),
-                        Icon(
-                          Icons.arrow_drop_up,
-                          size: 15,
-                          color: AppColors.slate600,
-                        ),
-                        Text(
-                          '${issue.agreeCount}',
-                          style: AppTypography.inlineCount(),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined, size: 19),
+                    color: AppColors.navy700,
+                    tooltip: 'Change status',
+                    onPressed: onChangeStatus,
+                  ),
+                ],
               ),
-              IconButton(
-                icon: const Icon(Icons.edit_outlined, size: 19),
-                color: AppColors.navy700,
-                tooltip: 'Change status',
-                onPressed: onChangeStatus,
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -613,7 +638,7 @@ class _StatusSheetState extends State<_StatusSheet> {
       ),
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -625,16 +650,20 @@ class _StatusSheetState extends State<_StatusSheet> {
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 ComplaintReference.format(widget.issue),
                 style: AppTypography.recordId(),
               ),
-              const SizedBox(height: 16),
-              Text('SET STATUS', style: AppTypography.sectionLabel()),
-              const SizedBox(height: 8),
+              const SizedBox(height: 20),
+              Text(
+                'Set status',
+                style: AppTypography.sectionLabel(color: AppColors.slate600),
+              ),
+              const SizedBox(height: 10),
               Wrap(
-                spacing: 6,
-                runSpacing: 6,
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   for (final status in _statuses)
                     _FilterChip(
@@ -688,18 +717,12 @@ class _QueueEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.surface,
-      margin: const EdgeInsets.only(top: 1),
-      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 52, horizontal: 32),
       child: Column(
         children: [
-          const Icon(
-            Icons.inbox_outlined,
-            size: 36,
-            color: AppColors.slate200,
-          ),
-          const SizedBox(height: 10),
+          const Icon(Icons.inbox_outlined, size: 34, color: AppColors.slate400),
+          const SizedBox(height: 12),
           Text(
             'Nothing in this filter',
             style: Theme.of(context).textTheme.titleSmall,
@@ -730,12 +753,12 @@ class _ConsoleError extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
+            const Icon(
               Icons.cloud_off_outlined,
-              size: 38,
-              color: AppColors.slate200,
+              size: 36,
+              color: AppColors.slate400,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             Text(message, style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 16),
             OutlinedButton(onPressed: onRetry, child: const Text('Try again')),

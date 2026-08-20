@@ -29,7 +29,7 @@ void main() {
     expect(scheme.primary, isNot(AppColors.amber700));
   });
 
-  test('surfaces are separated by hairlines, not elevation', () {
+  test('surfaces lift with shadow, never with Material elevation', () {
     final theme = AppTheme.light();
 
     expect(theme.cardTheme.elevation, 0);

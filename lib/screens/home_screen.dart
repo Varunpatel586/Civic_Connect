@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
-import '../theme/app_typography.dart';
+import '../theme/app_theme.dart';
 import '../utils/complaint_reference.dart';
 import 'admin_console_screen.dart';
 import 'camera_screen.dart';
@@ -12,8 +12,8 @@ import 'feed_screen.dart';
 import 'map_screen.dart';
 import 'profile_screen.dart';
 
-/// The citizen shell: feed, map, and profile, with reporting on the centre
-/// action.
+/// The citizen shell: complaints, map, and profile, with reporting on the
+/// centre action.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -30,7 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Bumped when the citizen returns from filing something. The feed keeps its
   /// own copy of the complaint list, so it needs rebuilding to pick up a new
-  /// one rather than showing a list that is missing what was just reported.
+  /// one rather than showing a list missing what was just reported.
   int _feedRevision = 0;
 
   Future<void> _onReportPressed() async {
@@ -72,32 +72,32 @@ class _HomeScreenState extends State<HomeScreen> {
       floatingActionButton: FloatingActionButton(
         onPressed: _onReportPressed,
         tooltip: 'Report an issue',
-        child: const Icon(Icons.add, size: 28),
+        child: const Icon(Icons.add_rounded, size: 28),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: DecoratedBox(
         decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: AppColors.slate200)),
+          border: Border(top: BorderSide(color: AppColors.slate100)),
         ),
         child: BottomNavigationBar(
           currentIndex: _selectedIndex,
           onTap: _onDestinationSelected,
           items: const [
             BottomNavigationBarItem(
-              icon: Icon(Icons.dynamic_feed_outlined),
-              activeIcon: Icon(Icons.dynamic_feed),
+              icon: Icon(Icons.article_outlined),
+              activeIcon: Icon(Icons.article_rounded),
               label: 'Complaints',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.map_outlined),
-              activeIcon: Icon(Icons.map),
+              activeIcon: Icon(Icons.map_rounded),
               label: 'Map',
             ),
             // Spacer beneath the floating action button.
             BottomNavigationBarItem(icon: SizedBox.shrink(), label: ''),
             BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
+              icon: Icon(Icons.person_outline_rounded),
+              activeIcon: Icon(Icons.person_rounded),
               label: 'Profile',
             ),
           ],
@@ -107,15 +107,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// Wordmark over the locality the citizen is currently filing from.
+/// Wordmark beside the ward the citizen is filing from.
 ///
-/// Naming the jurisdiction in the chrome is what municipal systems do, and it
-/// tells the citizen which body will receive whatever they report.
+/// Naming the jurisdiction is what municipal systems do — it tells the citizen
+/// which body receives what they report. It sits inline with the wordmark now
+/// rather than stacked beneath it in uppercase.
 class _HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
   const _HomeAppBar();
 
   @override
-  Size get preferredSize => const Size.fromHeight(56);
+  Size get preferredSize => const Size.fromHeight(58);
 
   @override
   Widget build(BuildContext context) {
@@ -123,38 +124,54 @@ class _HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
       (p) => p.currentAddress,
     );
     final locality = ComplaintReference.locality(address);
-
     final isAdmin = context.select<AppProvider, bool>((p) => p.isAdmin);
 
     return AppBar(
-      titleSpacing: 16,
+      titleSpacing: 18,
+      title: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Flexible(
+            child: Text(
+              'Civic Connect',
+              style: Theme.of(context).appBarTheme.titleTextStyle,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (locality != null) ...[
+            const SizedBox(width: 9),
+            Flexible(
+              child: Text(
+                locality,
+                style: Theme.of(context).textTheme.bodySmall,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ],
+      ),
       actions: [
         // Only municipal officers see a way in; the server enforces the same
         // rule, so hiding it here is convenience rather than security.
         if (isAdmin)
-          IconButton(
-            icon: const Icon(Icons.account_balance_outlined),
-            tooltip: 'Municipal console',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminConsoleScreen()),
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: IconButton(
+              icon: const Icon(Icons.account_balance_rounded, size: 21),
+              tooltip: 'Municipal console',
+              style: IconButton.styleFrom(
+                backgroundColor: AppColors.canvas,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
+                ),
+              ),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminConsoleScreen()),
+              ),
             ),
           ),
       ],
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text('Civic Connect', style: Theme.of(context).appBarTheme.titleTextStyle),
-          if (locality != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 1),
-              child: Text(
-                locality.toUpperCase(),
-                style: AppTypography.badge(color: AppColors.navy200),
-              ),
-            ),
-        ],
-      ),
     );
   }
 }

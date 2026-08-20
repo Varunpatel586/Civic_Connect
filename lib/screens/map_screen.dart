@@ -7,6 +7,7 @@ import '../models/issue.dart';
 import '../providers/app_provider.dart';
 import '../services/issue_service.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../theme/app_typography.dart';
 import '../utils/complaint_reference.dart';
 import '../utils/issue_categories.dart';
@@ -114,7 +115,9 @@ class _MapScreenState extends State<MapScreen> {
     final position = context.read<AppProvider>().currentPosition;
     if (position == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location is off, so you cannot be placed on the map.')),
+        const SnackBar(
+          content: Text('Location is off, so you cannot be placed on the map.'),
+        ),
       );
       return;
     }
@@ -136,10 +139,10 @@ class _MapScreenState extends State<MapScreen> {
             children: [
               const Icon(
                 Icons.map_outlined,
-                size: 38,
-                color: AppColors.slate200,
+                size: 36,
+                color: AppColors.slate400,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               Text(_error!, style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 16),
               OutlinedButton(onPressed: _load, child: const Text('Try again')),
@@ -152,7 +155,10 @@ class _MapScreenState extends State<MapScreen> {
     final position = context.select<AppProvider, ({double lat, double lng})?>(
       (p) => p.currentPosition == null
           ? null
-          : (lat: p.currentPosition!.latitude, lng: p.currentPosition!.longitude),
+          : (
+              lat: p.currentPosition!.latitude,
+              lng: p.currentPosition!.longitude,
+            ),
     );
 
     return Stack(
@@ -210,18 +216,18 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ],
         ),
-        const Positioned(top: 10, left: 10, child: _Legend()),
+        const Positioned(top: 12, left: 12, child: _Legend()),
         Positioned(
-          top: 10,
-          right: 10,
+          top: 12,
+          right: 12,
           child: Column(
             children: [
               _MapButton(
-                icon: Icons.my_location,
+                icon: Icons.my_location_rounded,
                 tooltip: 'Centre on me',
                 onTap: _goToMyLocation,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               _MapButton(
                 icon: Icons.fit_screen_outlined,
                 tooltip: 'Show all complaints',
@@ -232,16 +238,15 @@ class _MapScreenState extends State<MapScreen> {
         ),
         if (_selected != null)
           Positioned(
-            left: 10,
-            right: 10,
-            bottom: 12,
+            left: 12,
+            right: 12,
+            bottom: 14,
             child: _SelectedCard(
               issue: _selected!,
               onOpen: () => Navigator.of(context)
                   .push(
                     MaterialPageRoute(
-                      builder: (_) =>
-                          IssueDetailScreen(issueId: _selected!.id),
+                      builder: (_) => IssueDetailScreen(issueId: _selected!.id),
                     ),
                   )
                   .then((_) => _load()),
@@ -330,18 +335,18 @@ class _Legend extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.94),
-        border: Border.all(color: AppColors.slate200),
-        borderRadius: BorderRadius.circular(3),
+        color: AppColors.surface.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        boxShadow: AppTheme.softShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           for (final (label, palette) in _entries)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
+              padding: const EdgeInsets.symmetric(vertical: 3),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -354,10 +359,10 @@ class _Legend extends StatelessWidget {
                       shape: BoxShape.circle,
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                   Text(
-                    label.toUpperCase(),
-                    style: AppTypography.badge(color: AppColors.slate600),
+                    label,
+                    style: AppTypography.meta(color: AppColors.slate600),
                   ),
                 ],
               ),
@@ -383,18 +388,21 @@ class _MapButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: tooltip,
-      child: Material(
-        color: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          side: const BorderSide(color: AppColors.slate200),
-          borderRadius: BorderRadius.circular(3),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          boxShadow: AppTheme.softShadow,
         ),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(3),
-          child: Padding(
-            padding: const EdgeInsets.all(9),
-            child: Icon(icon, size: 19, color: AppColors.navy900),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(AppTheme.radius),
+            child: Padding(
+              padding: const EdgeInsets.all(11),
+              child: Icon(icon, size: 19, color: AppColors.navy900),
+            ),
           ),
         ),
       ),
@@ -418,71 +426,71 @@ class _SelectedCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final sla = SlaPolicy.evaluate(issue);
 
-    return Material(
-      color: AppColors.surface,
-      shape: RoundedRectangleBorder(
-        side: const BorderSide(color: AppColors.slate200),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: InkWell(
-        onTap: onOpen,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(13, 11, 6, 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            issue.title,
-                            style: Theme.of(context).textTheme.titleSmall,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+    return DecoratedBox(
+      decoration: AppTheme.cardDecoration,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onOpen,
+          borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              issue.title,
+                              style: Theme.of(context).textTheme.titleSmall,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        StatusChip(
-                          status: issue.status,
-                          overdue: sla.isOverdue,
-                          dense: true,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Text(
-                          ComplaintReference.format(issue),
-                          style: AppTypography.recordId(),
-                        ),
-                        const SizedBox(width: 9),
-                        Flexible(child: SlaLabel(sla: sla)),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      ComplaintReference.locality(issue.address) ??
-                          'Location unrecorded',
-                      style: Theme.of(context).textTheme.bodySmall,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                          const SizedBox(width: 8),
+                          StatusChip(
+                            status: issue.status,
+                            overdue: sla.isOverdue,
+                            dense: true,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 7),
+                      Row(
+                        children: [
+                          Text(
+                            ComplaintReference.format(issue),
+                            style: AppTypography.recordId(),
+                          ),
+                          const SizedBox(width: 10),
+                          Flexible(child: SlaLabel(sla: sla)),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        ComplaintReference.locality(issue.address) ??
+                            'Location unrecorded',
+                        style: AppTypography.meta(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close, size: 17),
-                color: AppColors.slate600,
-                tooltip: 'Dismiss',
-                onPressed: onDismiss,
-              ),
-            ],
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  color: AppColors.slate400,
+                  tooltip: 'Dismiss',
+                  onPressed: onDismiss,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -496,13 +504,11 @@ class _Attribution extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.surface.withValues(alpha: 0.82),
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      color: AppColors.surface.withValues(alpha: 0.85),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       child: Text(
         '© OpenStreetMap contributors',
-        style: Theme.of(
-          context,
-        ).textTheme.bodySmall?.copyWith(fontSize: 9),
+        style: AppTypography.meta().copyWith(fontSize: 9.5),
       ),
     );
   }

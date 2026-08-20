@@ -5,7 +5,7 @@ import '../models/issue.dart';
 import '../providers/app_provider.dart';
 import '../services/issue_service.dart';
 import '../theme/app_colors.dart';
-import '../theme/app_typography.dart';
+import '../theme/app_theme.dart';
 import '../utils/issue_categories.dart';
 import '../widgets/issue_card.dart';
 import 'issue_detail_screen.dart';
@@ -89,7 +89,9 @@ class _FeedScreenState extends State<FeedScreen> {
         context.read<AppProvider>().currentPosition == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Location is off, so nearby complaints cannot be found.'),
+          content: Text(
+            'Location is off, so nearby complaints cannot be found.',
+          ),
         ),
       );
       return;
@@ -129,7 +131,10 @@ class _FeedScreenState extends State<FeedScreen> {
         icon: Icons.cloud_off_outlined,
         title: _error!,
         body: 'Check that the backend is running, then try again.',
-        action: OutlinedButton(onPressed: _load, child: const Text('Try again')),
+        action: OutlinedButton(
+          onPressed: _load,
+          child: const Text('Try again'),
+        ),
       );
     }
 
@@ -160,9 +165,9 @@ class _FeedScreenState extends State<FeedScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 92),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 96),
         itemCount: visible.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
           final issue = visible[index];
           return IssueCard(
@@ -186,7 +191,8 @@ class _FeedScreenState extends State<FeedScreen> {
 ///
 /// Two axes rather than one combined list: scope answers "where", category
 /// answers "what", and collapsing them would make it impossible to ask for
-/// nearby potholes specifically.
+/// nearby potholes specifically. Different controls for different jobs — a
+/// segmented switch for the binary, an underlined row for the many.
 class _FeedFilters extends StatelessWidget {
   final FeedScope scope;
   final String? category;
@@ -204,45 +210,29 @@ class _FeedFilters extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: AppColors.surface,
-      padding: const EdgeInsets.only(top: 10, bottom: 8),
+      padding: const EdgeInsets.only(top: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                _ScopeButton(
-                  label: 'All wards',
-                  selected: scope == FeedScope.allWards,
-                  onTap: () => onScopeChanged(FeedScope.allWards),
-                ),
-                const SizedBox(width: 6),
-                _ScopeButton(
-                  label: 'Near me',
-                  icon: Icons.my_location,
-                  selected: scope == FeedScope.nearMe,
-                  onTap: () => onScopeChanged(FeedScope.nearMe),
-                ),
-              ],
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _ScopeSwitch(scope: scope, onChanged: onScopeChanged),
           ),
-          const SizedBox(height: 9),
+          const SizedBox(height: 14),
           SizedBox(
-            height: 30,
+            height: 34,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               children: [
-                _CategoryChip(
+                _CategoryTab(
                   label: 'All',
                   selected: category == null,
                   onTap: () => onCategoryChanged(null),
                 ),
                 for (final c in IssueCategories.all)
-                  _CategoryChip(
+                  _CategoryTab(
                     label: c.label,
-                    icon: c.icon,
                     selected: category == c.value,
                     onTap: () => onCategoryChanged(c.value),
                   ),
@@ -255,13 +245,54 @@ class _FeedFilters extends StatelessWidget {
   }
 }
 
-class _ScopeButton extends StatelessWidget {
+/// All wards / Near me, as one control rather than two buttons.
+///
+/// A segmented switch states that these are the only two choices and that one
+/// is always active — which two outlined buttons never quite manage to say.
+class _ScopeSwitch extends StatelessWidget {
+  final FeedScope scope;
+  final ValueChanged<FeedScope> onChanged;
+
+  const _ScopeSwitch({required this.scope, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppColors.slate100,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ScopeSegment(
+              label: 'All wards',
+              selected: scope == FeedScope.allWards,
+              onTap: () => onChanged(FeedScope.allWards),
+            ),
+          ),
+          Expanded(
+            child: _ScopeSegment(
+              label: 'Near me',
+              icon: Icons.near_me_rounded,
+              selected: scope == FeedScope.nearMe,
+              onTap: () => onChanged(FeedScope.nearMe),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScopeSegment extends StatelessWidget {
   final String label;
   final IconData? icon;
   final bool selected;
   final VoidCallback onTap;
 
-  const _ScopeButton({
+  const _ScopeSegment({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -270,34 +301,42 @@ class _ScopeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(3),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(vertical: 9),
         decoration: BoxDecoration(
-          color: selected ? AppColors.navy900 : AppColors.surface,
-          border: Border.all(
-            color: selected ? AppColors.navy900 : AppColors.slate200,
-          ),
-          borderRadius: BorderRadius.circular(3),
+          color: selected ? AppColors.surface : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppTheme.radius - 3),
+          boxShadow: selected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x120F1F35),
+                    blurRadius: 3,
+                    offset: Offset(0, 1),
+                  ),
+                ]
+              : null,
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             if (icon != null) ...[
               Icon(
                 icon,
-                size: 13,
-                color: selected ? Colors.white : AppColors.slate600,
+                size: 14,
+                color: selected ? AppColors.navy900 : AppColors.slate400,
               ),
-              const SizedBox(width: 5),
+              const SizedBox(width: 6),
             ],
             Text(
               label,
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontSize: 12.5,
-                color: selected ? Colors.white : AppColors.slate600,
+                color: selected ? AppColors.navy900 : AppColors.slate400,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
               ),
             ),
           ],
@@ -307,55 +346,46 @@ class _ScopeButton extends StatelessWidget {
   }
 }
 
-class _CategoryChip extends StatelessWidget {
+/// A category, marked by a rule under the active one rather than a filled pill.
+class _CategoryTab extends StatelessWidget {
   final String label;
-  final IconData? icon;
   final bool selected;
   final VoidCallback onTap;
 
-  const _CategoryChip({
+  const _CategoryTab({
     required this.label,
     required this.selected,
     required this.onTap,
-    this.icon,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(3),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 9),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: selected ? AppColors.navy700 : AppColors.canvas,
-            border: Border.all(
-              color: selected ? AppColors.navy700 : AppColors.slate200,
-            ),
-            borderRadius: BorderRadius.circular(3),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                Icon(
-                  icon,
-                  size: 12,
-                  color: selected ? Colors.white : AppColors.slate600,
-                ),
-                const SizedBox(width: 4),
-              ],
-              Text(
-                label,
-                style: AppTypography.badge(
-                  color: selected ? Colors.white : AppColors.slate600,
-                ).copyWith(letterSpacing: 0.2, fontSize: 11),
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: selected ? AppColors.navy900 : AppColors.slate400,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 7),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              height: 2,
+              width: selected ? 22 : 0,
+              decoration: BoxDecoration(
+                color: AppColors.navy900,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -384,20 +414,20 @@ class _FeedMessage extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 40, color: AppColors.slate200),
-            const SizedBox(height: 13),
+            Icon(icon, size: 38, color: AppColors.slate400),
+            const SizedBox(height: 16),
             Text(
               title,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 7),
             Text(
               body,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
-            if (action != null) ...[const SizedBox(height: 18), action!],
+            if (action != null) ...[const SizedBox(height: 20), action!],
           ],
         ),
       ),

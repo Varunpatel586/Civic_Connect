@@ -9,6 +9,7 @@ import '../providers/app_provider.dart';
 import '../services/api_client.dart';
 import '../services/location_service.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../theme/app_typography.dart';
 import '../utils/issue_categories.dart';
 
@@ -178,7 +179,9 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
 
       navigator.popUntil((route) => route.isFirst);
       messenger.showSnackBar(
-        const SnackBar(content: Text('Complaint filed. You can track it in your profile.')),
+        const SnackBar(
+          content: Text('Complaint filed. You can track it in your profile.'),
+        ),
       );
     } catch (e) {
       messenger.showSnackBar(
@@ -209,14 +212,14 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
                   setState(() => _additionalImages.removeAt(index)),
             ),
             _Section(
-              label: 'CATEGORY',
+              label: 'Category',
               child: _CategoryPicker(
                 selected: _category,
                 onChanged: (value) => setState(() => _category = value),
               ),
             ),
             _Section(
-              label: 'WHAT IS WRONG',
+              label: 'What is wrong',
               child: TextFormField(
                 controller: _descriptionController,
                 maxLines: 4,
@@ -237,7 +240,7 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
               ),
             ),
             _Section(
-              label: 'LOCATION',
+              label: 'Location',
               child: _LocationCard(
                 latitude: _latitude,
                 longitude: _longitude,
@@ -248,7 +251,7 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
               child: ElevatedButton(
                 onPressed: _isSubmitting || !_hasLocation ? null : _submit,
                 child: _isSubmitting
@@ -265,11 +268,11 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
             ),
             if (!_hasLocation && !_isLocating)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                 child: Text(
                   'Filing is disabled until a location is available.',
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: AppTypography.meta(),
                 ),
               ),
           ],
@@ -279,6 +282,7 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
   }
 }
 
+/// One step of the filing form, as a card on the canvas.
 class _Section extends StatelessWidget {
   final String label;
   final Widget child;
@@ -287,17 +291,22 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.surface,
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: AppTypography.sectionLabel()),
-          const SizedBox(height: 10),
-          child,
-        ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Container(
+        decoration: AppTheme.cardDecoration,
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: AppTypography.sectionLabel(color: AppColors.slate600),
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
       ),
     );
   }
@@ -318,89 +327,86 @@ class _EvidenceStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.surface,
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AspectRatio(
-            aspectRatio: 4 / 3,
-            child: _Photo(file: initialImage, fit: BoxFit.cover),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 68,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                for (var i = 0; i < additional.length; i++)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(3),
-                          child: SizedBox(
-                            width: 68,
-                            height: 68,
-                            child: _Photo(file: additional[i], fit: BoxFit.cover),
-                          ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AspectRatio(
+          aspectRatio: 4 / 3,
+          child: _Photo(file: initialImage, fit: BoxFit.cover),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          height: 72,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: [
+              for (var i = 0; i < additional.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(AppTheme.radius),
+                        child: SizedBox(
+                          width: 72,
+                          height: 72,
+                          child: _Photo(file: additional[i], fit: BoxFit.cover),
                         ),
-                        Positioned(
-                          top: 2,
-                          right: 2,
-                          child: InkWell(
-                            onTap: () => onRemove(i),
-                            child: Container(
-                              padding: const EdgeInsets.all(2),
-                              decoration: BoxDecoration(
-                                color: AppColors.navy900.withValues(alpha: 0.85),
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                              child: const Icon(
-                                Icons.close,
-                                size: 13,
-                                color: Colors.white,
-                              ),
+                      ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: GestureDetector(
+                          onTap: () => onRemove(i),
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              color: AppColors.navy900.withValues(alpha: 0.85),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.close_rounded,
+                              size: 13,
+                              color: Colors.white,
                             ),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                InkWell(
+                ),
+              Material(
+                color: AppColors.slate100,
+                borderRadius: BorderRadius.circular(AppTheme.radius),
+                child: InkWell(
                   onTap: onAdd,
-                  child: Container(
-                    width: 68,
-                    height: 68,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: AppColors.slate200),
-                      borderRadius: BorderRadius.circular(3),
-                    ),
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
+                  child: SizedBox(
+                    width: 72,
+                    height: 72,
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         const Icon(
                           Icons.add_a_photo_outlined,
-                          size: 18,
+                          size: 19,
                           color: AppColors.slate600,
                         ),
-                        const SizedBox(height: 3),
+                        const SizedBox(height: 5),
                         Text(
-                          'ADD',
-                          style: AppTypography.badge(color: AppColors.slate600),
+                          'Add',
+                          style: AppTypography.meta(color: AppColors.slate600),
                         ),
                       ],
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -416,49 +422,47 @@ class _CategoryPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 7,
-      runSpacing: 7,
+      spacing: 8,
+      runSpacing: 8,
       children: [
         for (final category in IssueCategories.all)
-          InkWell(
-            onTap: () => onChanged(category.value),
-            borderRadius: BorderRadius.circular(3),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-              decoration: BoxDecoration(
-                color: selected == category.value
-                    ? AppColors.navy900
-                    : AppColors.surface,
-                border: Border.all(
-                  color: selected == category.value
-                      ? AppColors.navy900
-                      : AppColors.slate200,
-                ),
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    category.icon,
-                    size: 14,
-                    color: selected == category.value
-                        ? Colors.white
-                        : AppColors.slate600,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    category.label,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontSize: 12.5,
-                      color: selected == category.value
-                          ? Colors.white
-                          : AppColors.slate600,
+          Builder(
+            builder: (context) {
+              final isSelected = selected == category.value;
+              final foreground = isSelected ? Colors.white : AppColors.slate600;
+
+              return Material(
+                color: isSelected ? AppColors.navy900 : AppColors.canvas,
+                borderRadius: BorderRadius.circular(AppTheme.radius),
+                child: InkWell(
+                  onTap: () => onChanged(category.value),
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 13,
+                      vertical: 11,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(category.icon, size: 15, color: foreground),
+                        const SizedBox(width: 7),
+                        Text(
+                          category.label,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                color: foreground,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                              ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
       ],
     );
@@ -492,22 +496,18 @@ class _LocationCard extends StatelessWidget {
             height: 15,
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
-          const SizedBox(width: 11),
-          Text(
-            'Finding your location…',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          const SizedBox(width: 12),
+          Text('Finding your location…', style: AppTypography.meta()),
         ],
       );
     }
 
     if (latitude == null || longitude == null) {
       return Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: StatusColors.overdue.background,
-          border: Border.all(color: StatusColors.overdue.border),
-          borderRadius: BorderRadius.circular(3),
+          borderRadius: BorderRadius.circular(AppTheme.radius),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -516,25 +516,22 @@ class _LocationCard extends StatelessWidget {
               children: [
                 Icon(
                   Icons.location_off_outlined,
-                  size: 16,
+                  size: 17,
                   color: StatusColors.overdue.foreground,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     error ?? 'Location unavailable.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: StatusColors.overdue.foreground,
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            OutlinedButton(
-              onPressed: onRetry,
-              child: const Text('Try again'),
-            ),
+            const SizedBox(height: 12),
+            OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
           ],
         ),
       );
@@ -547,21 +544,21 @@ class _LocationCard extends StatelessWidget {
           children: [
             const Icon(
               Icons.place_outlined,
-              size: 16,
+              size: 17,
               color: AppColors.navy700,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 address ?? 'Address not resolved',
-                style: Theme.of(context).textTheme.bodySmall,
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 7),
         Padding(
-          padding: const EdgeInsets.only(left: 24),
+          padding: const EdgeInsets.only(left: 27),
           child: Text(
             '${latitude!.toStringAsFixed(5)}, ${longitude!.toStringAsFixed(5)}',
             style: AppTypography.recordId(),
@@ -590,15 +587,15 @@ class _Photo extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Container(
-            color: AppColors.canvas,
+            color: AppColors.slate100,
             child: const Icon(
               Icons.broken_image_outlined,
-              color: AppColors.slate200,
+              color: AppColors.slate400,
             ),
           );
         }
         if (!snapshot.hasData) {
-          return Container(color: AppColors.canvas);
+          return Container(color: AppColors.slate100);
         }
         return Image.memory(snapshot.data!, fit: fit);
       },

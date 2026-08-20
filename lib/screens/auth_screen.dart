@@ -110,7 +110,7 @@ class _AuthScreenState extends State<AuthScreen> {
             children: [
               const _Masthead(),
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
+                padding: const EdgeInsets.fromLTRB(20, 26, 20, 32),
                 child: Form(
                   key: _formKey,
                   child: Column(
@@ -173,7 +173,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                 ? Icons.visibility_outlined
                                 : Icons.visibility_off_outlined,
                             size: 19,
-                            color: AppColors.slate600,
+                            color: AppColors.slate400,
                           ),
                           onPressed: () => setState(
                             () => _obscurePassword = !_obscurePassword,
@@ -210,7 +210,10 @@ class _AuthScreenState extends State<AuthScreen> {
 
                       OutlinedButton.icon(
                         onPressed: _isLoading ? null : _signInWithGoogle,
-                        icon: const Icon(Icons.account_circle_outlined, size: 19),
+                        icon: const Icon(
+                          Icons.account_circle_outlined,
+                          size: 19,
+                        ),
                         label: const Text('Continue with Google'),
                       ),
 
@@ -237,45 +240,43 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 }
 
-/// The navy header block: who runs this, and what it is for.
+/// Who runs this, and what it is for.
+///
+/// Was a navy slab, which is how software looked when the chrome was the
+/// brand. The wordmark carries the identity on its own; the ward line above it
+/// says whose service this is without painting the wall behind it.
 class _Masthead extends StatelessWidget {
   const _Masthead();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      color: AppColors.navy900,
-      padding: const EdgeInsets.fromLTRB(20, 68, 20, 26),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 76, 20, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-            decoration: BoxDecoration(
-              border: Border.all(color: AppColors.navy200),
-              borderRadius: BorderRadius.circular(3),
-            ),
-            child: Text(
-              'MUNICIPAL SERVICES',
-              style: AppTypography.badge(color: AppColors.navy200),
-            ),
+          Row(
+            children: [
+              Container(width: 22, height: 2, color: AppColors.amber700),
+              const SizedBox(width: 10),
+              Text(
+                'Municipal services',
+                style: AppTypography.sectionLabel(color: AppColors.slate600),
+              ),
+            ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           Text(
             'Civic Connect',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              color: Colors.white,
-              fontSize: 30,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineMedium?.copyWith(fontSize: 32),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Text(
             'Report a civic issue, track it to resolution, and see what '
             'your neighbours have already raised.',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: AppColors.navy200),
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
         ],
       ),
@@ -298,8 +299,9 @@ class _ModeToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        border: Border.all(color: AppColors.slate200),
+        color: AppColors.slate100,
         borderRadius: BorderRadius.circular(AppTheme.radius),
       ),
       child: Row(
@@ -337,16 +339,32 @@ class _ModeTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      child: Container(
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(vertical: 12),
         alignment: Alignment.center,
-        color: selected ? AppColors.navy900 : Colors.transparent,
+        decoration: BoxDecoration(
+          color: selected ? AppColors.surface : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppTheme.radius - 3),
+          boxShadow: selected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x120F1F35),
+                    blurRadius: 3,
+                    offset: Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
         child: Text(
           label,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: selected ? Colors.white : AppColors.slate600,
+            color: selected ? AppColors.navy900 : AppColors.slate400,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
           ),
         ),
       ),
@@ -380,8 +398,11 @@ class _Field extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label.toUpperCase(), style: AppTypography.sectionLabel()),
-        const SizedBox(height: 6),
+        Text(
+          label,
+          style: AppTypography.sectionLabel(color: AppColors.slate600),
+        ),
+        const SizedBox(height: 8),
         TextFormField(
           controller: controller,
           obscureText: obscure,
@@ -389,7 +410,7 @@ class _Field extends StatelessWidget {
           validator: validator,
           decoration: InputDecoration(
             hintText: hint,
-            prefixIcon: Icon(icon, size: 19, color: AppColors.slate600),
+            prefixIcon: Icon(icon, size: 19, color: AppColors.slate400),
             suffixIcon: suffix,
           ),
         ),
@@ -407,8 +428,8 @@ class _OrRule extends StatelessWidget {
       children: [
         const Expanded(child: Divider()),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text('OR', style: AppTypography.sectionLabel()),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Text('or', style: AppTypography.meta()),
         ),
         const Expanded(child: Divider()),
       ],

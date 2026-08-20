@@ -11,6 +11,7 @@ import '../providers/app_provider.dart';
 import '../services/api_client.dart';
 import '../services/issue_service.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../theme/app_typography.dart';
 import '../utils/complaint_reference.dart';
 import '../utils/issue_categories.dart';
@@ -171,10 +172,13 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
         title: const Text('Complaint'),
         actions: [
           if (_issue != null)
-            IconButton(
-              icon: const Icon(Icons.ios_share),
-              tooltip: 'Share',
-              onPressed: _share,
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: IconButton(
+                icon: const Icon(Icons.ios_share_rounded, size: 20),
+                tooltip: 'Share',
+                onPressed: _share,
+              ),
             ),
         ],
       ),
@@ -202,17 +206,14 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(
-                Icons.error_outline,
-                size: 38,
-                color: AppColors.slate200,
+                Icons.error_outline_rounded,
+                size: 36,
+                color: AppColors.slate400,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               Text(_error!, style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 16),
-              OutlinedButton(
-                onPressed: _load,
-                child: const Text('Try again'),
-              ),
+              OutlinedButton(onPressed: _load, child: const Text('Try again')),
             ],
           ),
         ),
@@ -225,7 +226,7 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: EdgeInsets.zero,
+        padding: const EdgeInsets.only(bottom: 20),
         children: [
           _Evidence(issue: issue),
           _Summary(issue: issue, sla: sla),
@@ -233,13 +234,17 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
           _VoteBar(issue: issue, onVote: _vote),
           if (issue.statusHistory.isNotEmpty) _Timeline(issue: issue),
           _CommentSection(comments: comments),
-          const SizedBox(height: 12),
         ],
       ),
     );
   }
 }
 
+/// The photograph, full width and hard against the chrome.
+///
+/// The one element here that is not a floating card: it is the evidence, and
+/// insetting it would make it read as an illustration rather than a record of
+/// what is actually there.
 class _Evidence extends StatelessWidget {
   final Issue issue;
 
@@ -252,18 +257,55 @@ class _Evidence extends StatelessWidget {
       child: CachedNetworkImage(
         imageUrl: ApiClient().normalizeUrl(issue.imageUrl),
         fit: BoxFit.cover,
-        placeholder: (context, url) => Container(
-          color: AppColors.canvas,
-          child: const Center(child: CircularProgressIndicator()),
-        ),
+        fadeInDuration: const Duration(milliseconds: 180),
+        placeholder: (context, url) => Container(color: AppColors.slate100),
         errorWidget: (context, url, error) => Container(
-          color: AppColors.canvas,
+          color: AppColors.slate100,
           child: const Icon(
             Icons.image_not_supported_outlined,
-            color: AppColors.slate200,
-            size: 34,
+            color: AppColors.slate400,
+            size: 32,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Shared wrapper for the sections under the photograph.
+///
+/// Each is its own card on the canvas: summary, location, community check,
+/// history, discussion. They used to be white strips separated by 1px gaps,
+/// which made a case file look like a form.
+class _Section extends StatelessWidget {
+  final Widget child;
+  final EdgeInsets padding;
+  final VoidCallback? onTap;
+
+  const _Section({
+    required this.child,
+    this.padding = const EdgeInsets.fromLTRB(18, 16, 18, 18),
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Padding(padding: padding, child: child);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: DecoratedBox(
+        decoration: AppTheme.cardDecoration,
+        child: onTap == null
+            ? content
+            : Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+                  child: content,
+                ),
+              ),
       ),
     );
   }
@@ -280,46 +322,52 @@ class _Summary extends StatelessWidget {
   Widget build(BuildContext context) {
     final category = IssueCategories.byValue(issue.category);
 
-    return Container(
-      color: AppColors.surface,
-      padding: const EdgeInsets.fromLTRB(16, 15, 16, 15),
+    return _Section(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(category.icon, size: 14, color: AppColors.slate600),
-              const SizedBox(width: 5),
-              Text(
-                category.label.toUpperCase(),
-                style: AppTypography.badge(color: AppColors.slate600),
+              Icon(category.icon, size: 15, color: AppColors.slate400),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  category.label,
+                  style: AppTypography.meta(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const Spacer(),
+              const SizedBox(width: 10),
               StatusChip(status: issue.status, overdue: sla.isOverdue),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Text(issue.title, style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Row(
             children: [
               Text(
                 ComplaintReference.format(issue),
                 style: AppTypography.recordId(),
               ),
-              const SizedBox(width: 10),
-              Text(
-                'filed ${timeago.format(issue.createdAt)}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  'filed ${timeago.format(issue.createdAt)}',
+                  style: AppTypography.meta(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
           if (!sla.isClosed) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             SlaLabel(sla: sla),
           ],
           if (issue.description?.trim().isNotEmpty ?? false) ...[
-            const SizedBox(height: 13),
+            const SizedBox(height: 15),
             Text(
               issue.description!.trim(),
               style: Theme.of(context).textTheme.bodyMedium,
@@ -339,50 +387,41 @@ class _LocationRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.surface,
-      margin: const EdgeInsets.only(top: 1),
-      child: InkWell(
-        onTap: onOpenMaps,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 13, 12, 13),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.place_outlined,
-                size: 18,
-                color: AppColors.navy700,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      issue.address?.trim().isNotEmpty ?? false
-                          ? issue.address!
-                          : 'Address not recorded',
-                      style: Theme.of(context).textTheme.bodySmall,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${issue.latitude.toStringAsFixed(5)}, '
-                      '${issue.longitude.toStringAsFixed(5)}',
-                      style: AppTypography.recordId().copyWith(fontSize: 10),
-                    ),
-                  ],
+    return _Section(
+      onTap: onOpenMaps,
+      padding: const EdgeInsets.fromLTRB(18, 15, 16, 15),
+      child: Row(
+        children: [
+          const Icon(Icons.place_outlined, size: 19, color: AppColors.navy700),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  issue.address?.trim().isNotEmpty ?? false
+                      ? issue.address!
+                      : 'Address not recorded',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              const Icon(
-                Icons.open_in_new,
-                size: 16,
-                color: AppColors.slate600,
-              ),
-            ],
+                const SizedBox(height: 3),
+                Text(
+                  '${issue.latitude.toStringAsFixed(5)}, '
+                  '${issue.longitude.toStringAsFixed(5)}',
+                  style: AppTypography.recordId(),
+                ),
+              ],
+            ),
           ),
-        ),
+          const SizedBox(width: 10),
+          const Icon(
+            Icons.open_in_new_rounded,
+            size: 16,
+            color: AppColors.slate400,
+          ),
+        ],
       ),
     );
   }
@@ -399,16 +438,16 @@ class _VoteBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = issue.agreeCount + issue.disagreeCount;
 
-    return Container(
-      color: AppColors.surface,
-      margin: const EdgeInsets.only(top: 1),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+    return _Section(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Text('COMMUNITY CHECK', style: AppTypography.sectionLabel()),
+              Text(
+                'Community check',
+                style: AppTypography.sectionLabel(color: AppColors.slate600),
+              ),
               const Spacer(),
               Text(
                 total == 1 ? '1 response' : '$total responses',
@@ -416,7 +455,7 @@ class _VoteBar extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 11),
+          const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
@@ -473,33 +512,30 @@ class _VoteButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = active ? activeColor : AppColors.slate600;
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(3),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 11),
-        decoration: BoxDecoration(
-          color: active ? activeColor.withValues(alpha: 0.06) : null,
-          border: Border.all(
-            color: active ? activeColor : AppColors.slate200,
-          ),
-          borderRadius: BorderRadius.circular(3),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 7),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: color,
-                fontSize: 12.5,
+    return Material(
+      color: active ? activeColor.withValues(alpha: 0.09) : AppColors.canvas,
+      borderRadius: BorderRadius.circular(AppTheme.radius),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 13),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: color,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                ),
               ),
-            ),
-            const SizedBox(width: 6),
-            Text('$count', style: AppTypography.inlineCount(color: color)),
-          ],
+              const SizedBox(width: 7),
+              Text('$count', style: AppTypography.inlineCount(color: color)),
+            ],
+          ),
         ),
       ),
     );
@@ -520,15 +556,16 @@ class _Timeline extends StatelessWidget {
     final format = DateFormat('d MMM, HH:mm');
     final events = issue.statusHistory;
 
-    return Container(
-      color: AppColors.surface,
-      margin: const EdgeInsets.only(top: 1),
-      padding: const EdgeInsets.fromLTRB(16, 15, 16, 6),
+    return _Section(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('CASE HISTORY', style: AppTypography.sectionLabel()),
-          const SizedBox(height: 13),
+          Text(
+            'Case history',
+            style: AppTypography.sectionLabel(color: AppColors.slate600),
+          ),
+          const SizedBox(height: 16),
           for (var i = 0; i < events.length; i++)
             _TimelineEntry(
               event: events[i],
@@ -577,9 +614,7 @@ class _TimelineEntry extends StatelessWidget {
                 ),
               ),
               if (!isLast)
-                Expanded(
-                  child: Container(width: 2, color: AppColors.slate100),
-                ),
+                Expanded(child: Container(width: 2, color: AppColors.slate100)),
             ],
           ),
           const SizedBox(width: 12),
@@ -598,19 +633,14 @@ class _TimelineEntry extends StatelessWidget {
                         ),
                       ),
                       const Spacer(),
-                      Text(
-                        formatted,
-                        style: AppTypography.recordId().copyWith(fontSize: 10),
-                      ),
+                      Text(formatted, style: AppTypography.recordId()),
                     ],
                   ),
                   if (event.note.isNotEmpty) ...[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 3),
                     Text(
                       event.note,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(fontSize: 11.5),
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ],
                 ],
@@ -630,33 +660,31 @@ class _CommentSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.surface,
-      margin: const EdgeInsets.only(top: 1),
-      padding: const EdgeInsets.only(top: 15, bottom: 6),
+    return _Section(
+      padding: const EdgeInsets.only(top: 16, bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 18),
             child: Row(
               children: [
-                Text('DISCUSSION', style: AppTypography.sectionLabel()),
-                const Spacer(),
                 Text(
-                  '${comments.length}',
-                  style: AppTypography.inlineCount(),
+                  'Discussion',
+                  style: AppTypography.sectionLabel(color: AppColors.slate600),
                 ),
+                const Spacer(),
+                Text('${comments.length}', style: AppTypography.inlineCount()),
               ],
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           if (comments.isEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+              padding: const EdgeInsets.fromLTRB(18, 6, 18, 14),
               child: Text(
                 'No comments yet. Add what you know about this issue.',
-                style: Theme.of(context).textTheme.bodySmall,
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
             )
           else
@@ -683,12 +711,12 @@ class _CommentComposer extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.slate200)),
+        border: Border(top: BorderSide(color: AppColors.slate100)),
       ),
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
           child: Row(
             children: [
               Expanded(
@@ -700,8 +728,8 @@ class _CommentComposer extends StatelessWidget {
                   decoration: const InputDecoration(
                     hintText: 'Add to the discussion',
                     contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 11,
+                      horizontal: 14,
+                      vertical: 12,
                     ),
                   ),
                 ),
@@ -725,7 +753,7 @@ class _CommentComposer extends StatelessWidget {
                             color: Colors.white,
                           ),
                         )
-                      : const Icon(Icons.send, size: 18),
+                      : const Icon(Icons.arrow_upward_rounded, size: 19),
                 ),
               ),
             ],

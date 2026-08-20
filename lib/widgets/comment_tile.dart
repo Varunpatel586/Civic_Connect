@@ -19,7 +19,7 @@ class CommentTile extends StatelessWidget {
     final user = comment.user;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -42,11 +42,11 @@ class CommentTile extends StatelessWidget {
                     const SizedBox(width: 8),
                     Text(
                       timeago.format(comment.createdAt),
-                      style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
+                      style: AppTypography.meta(),
                     ),
                   ],
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 4),
                 Text(comment.content, style: theme.textTheme.bodyMedium),
               ],
             ),
@@ -57,8 +57,8 @@ class CommentTile extends StatelessWidget {
   }
 }
 
-/// Square rather than circular, to sit with the hairline treatment the rest of
-/// the interface uses. Falls back to the initial when there is no picture.
+/// A circle, because a person is the one thing in a register that is not a
+/// record. Falls back to the initial when there is no picture.
 class _Avatar extends StatelessWidget {
   final UserProfile user;
 
@@ -75,10 +75,9 @@ class _Avatar extends StatelessWidget {
       width: 34,
       height: 34,
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: AppColors.canvas,
-        border: Border.all(color: AppColors.slate200),
-        borderRadius: BorderRadius.circular(3),
+      decoration: const BoxDecoration(
+        color: AppColors.slate100,
+        shape: BoxShape.circle,
       ),
       child: avatarUrl == null || avatarUrl.isEmpty
           ? Center(
