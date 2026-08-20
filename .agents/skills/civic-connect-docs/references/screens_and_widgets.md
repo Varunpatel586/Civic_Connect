@@ -7,7 +7,7 @@ This document describes the presentation layer classes in `lib/screens/` and `li
 ## Screens
 
 ### 1. AuthScreen
-Located in [auth_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/screens/auth_screen.dart).
+Located in [auth_screen.dart](../../../../lib/screens/auth_screen.dart).
 - **Purpose**: Manages authentication entry points (Login vs. Signup toggle).
 - **Features**:
   - Secure email/password forms with validation.
@@ -15,7 +15,7 @@ Located in [auth_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/
   - Displays loading indicators during backend requests and errors in an alert strip.
 
 ### 2. HomeScreen
-Located in [home_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/screens/home_screen.dart).
+Located in [home_screen.dart](../../../../lib/screens/home_screen.dart).
 - **Purpose**: The core layout scaffold containing global navigation.
 - **Features**:
   - Implements a material-design bottom navigation bar with a curved cutout.
@@ -24,7 +24,7 @@ Located in [home_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/
   - Verifies session tokens using `AuthService().isAuthenticated` before launching the camera.
 
 ### 3. FeedScreen
-Located in [feed_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/screens/feed_screen.dart).
+Located in [feed_screen.dart](../../../../lib/screens/feed_screen.dart).
 - **Purpose**: Displays reported civic issues in a feed.
 - **Features**:
   - Dynamically fetches nearby issues from the `/issues/nearby` REST endpoint.
@@ -33,7 +33,7 @@ Located in [feed_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/
   - Integrates `PostDetailsBottomSheet` for viewing details and comments in place, fetching from `/comments/issue/:issueId`.
 
 ### 4. CameraScreen
-Located in [camera_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/screens/camera_screen.dart).
+Located in [camera_screen.dart](../../../../lib/screens/camera_screen.dart).
 - **Purpose**: Captures photos of civic issues.
 - **Features**:
   - Integrates with the `camera` package to control hardware lenses.
@@ -41,7 +41,7 @@ Located in [camera_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connec
   - Once captured, forwards the image path alongside the resolved Latitude & Longitude to the submission form.
 
 ### 5. IssueSubmissionScreen
-Located in [issue_submission_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/screens/issue_submission_screen.dart).
+Located in [issue_submission_screen.dart](../../../../lib/screens/issue_submission_screen.dart).
 - **Purpose**: Form to enter complaint parameters and submit to the backend database.
 - **Features**:
   - Renders a dropdown list of categories (pothole, street light, water supply, electricity, garbage, road damage, drainage, other).
@@ -50,7 +50,7 @@ Located in [issue_submission_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Ci
   - Saves the issue to MongoDB via `POST /issues`.
 
 ### 6. IssueDetailScreen
-Located in [issue_detail_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/screens/issue_detail_screen.dart).
+Located in [issue_detail_screen.dart](../../../../lib/screens/issue_detail_screen.dart).
 - **Purpose**: Displays full details of a reported issue and its comments.
 - **Features**:
   - Displays map coordinates, full description, and status chip.
@@ -58,7 +58,7 @@ Located in [issue_detail_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_
   - Connects to `share_plus` to allow native system sharing of reported issues.
 
 ### 7. ProfileScreen
-Located in [profile_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/screens/profile_screen.dart).
+Located in [profile_screen.dart](../../../../lib/screens/profile_screen.dart).
 - **Purpose**: Displays the user's profile card, statistics, and reported issue history.
 - **Features**:
   - Displays count statistics for complaints submitted, votes registered, and resolved status counts.
@@ -70,7 +70,7 @@ Located in [profile_screen.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Conne
 ## Widgets
 
 ### 1. IssueCard
-Located in [issue_card.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/widgets/issue_card.dart).
+Located in [issue_card.dart](../../../../lib/widgets/issue_card.dart).
 - **Purpose**: The primary item card rendered inside feed lists.
 - **Visuals**:
   - Loads images with progress indicators using `cached_network_image`.
@@ -83,18 +83,18 @@ Located in [issue_card.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/l
   - Hosts interactive buttons for **Agree** (upvotes), **Disagree** (downvotes), and **Comment** navigation. Calls `/issues/:id/vote`.
 
 ### 2. UpvoteButton
-Located in [UpvoteButton.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/widgets/UpvoteButton.dart).
+Located in [UpvoteButton.dart](../../../../lib/widgets/UpvoteButton.dart).
 - **Purpose**: A reusable vote state toggle icon.
 - **Features**:
   - Shows filled thumbs up if voted, outlined if not.
   - Toggles count changes locally and updates the database using `UpvoteService` (`POST /issues/:id/upvote`).
 
 ### 3. CommentTile
-Located in [comment_tile.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/widgets/comment_tile.dart).
+Located in [comment_tile.dart](../../../../lib/widgets/comment_tile.dart).
 - **Purpose**: Renders a single comment block.
 - **Features**: Displays commenter avatar (or fallback icon), username, time since creation, and comment content.
 
 ### 4. AuthWrapper
-Located in [auth_wrapper.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/widgets/auth_wrapper.dart).
+Located in [auth_wrapper.dart](../../../../lib/widgets/auth_wrapper.dart).
 - **Purpose**: Root switcher routing traffic based on authorization state.
 - **Features**: Returns `HomeScreen` if logged in, otherwise routes to `AuthScreen`.

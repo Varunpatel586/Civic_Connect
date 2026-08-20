@@ -45,41 +45,41 @@ The application leverage the following technologies:
 Below is a detailed walkthrough of all implementation files.
 
 ### Client-Side Root & Models (`lib/`)
-- **[main.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/main.dart)**:
+- **[main.dart](../../lib/main.dart)**:
   - Initializes widget bindings and loads environment variables from the parent `.env`.
   - Configures the REST services and initializes `DeepLinkService`.
   - Supplies the global `AppProvider` to the widget tree using `ChangeNotifierProvider` to prevent startup exceptions.
-- **[user_profile.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/models/user_profile.dart)**:
+- **[user_profile.dart](../../lib/models/user_profile.dart)**:
   - Maps user account details (`id`, `username`, `email`, `role`, `avatarUrl`, `createdAt`).
-- **[issue.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/models/issue.dart)**:
+- **[issue.dart](../../lib/models/issue.dart)**:
   - Maps reported complaints. Holds coordinate parameters, image URLs, address strings, vote counts, status states, and user vote info.
 
 ### Client-Side Providers & Services
-- **[app_provider.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/providers/app_provider.dart)**:
+- **[app_provider.dart](../../lib/providers/app_provider.dart)**:
   - The central coordinator of the app's global state (currentUser, nearbyIssues, userIssues).
-- **[api_client.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/api_client.dart)**:
+- **[api_client.dart](../../lib/services/api_client.dart)**:
   - Generic HTTP client wrapping headers, JWT authentication token loading from `SharedPreferences`, and multipart file uploading.
-- **[auth_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/auth_service.dart)**:
+- **[auth_service.dart](../../lib/services/auth_service.dart)**:
   - Connects to `/auth/login`, `/auth/signup`, `/auth/profile`, and `/auth/google`.
-- **[issue_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/issue_service.dart)**:
+- **[issue_service.dart](../../lib/services/issue_service.dart)**:
   - Queries `/issues/nearby`, `/issues/user`, and `/issues/:id/vote`.
-- **[comment_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/comment_service.dart)**:
+- **[comment_service.dart](../../lib/services/comment_service.dart)**:
   - Queries `/comments/issue/:id` CRUD routes.
 
 ### Server-Side Files (`server/`)
-- **[server.js](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/server/server.js)**:
+- **[server.js](../../server/server.js)**:
   - Express application entrypoint. Configures CORS, parses JSON payloads, serves the `/uploads` folder statically, and registers API routers. Loads the unified `.env` file from the parent directory.
-- **[db.js](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/server/config/db.js)**:
+- **[db.js](../../server/config/db.js)**:
   - Establishes connection to MongoDB via Mongoose ODM.
-- **[auth.js](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/server/middleware/auth.js)**:
+- **[auth.js](../../server/middleware/auth.js)**:
   - Verification middleware extracting JWT tokens from request headers and attaching decoded user objects.
-- **[User.js](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/server/models/User.js)**:
+- **[User.js](../../server/models/User.js)**:
   - User model schema mapping fields: `username`, `email` (unique), hashed `password`, and enum `role` ('user', 'admin').
-- **[Issue.js](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/server/models/Issue.js)**:
+- **[Issue.js](../../server/models/Issue.js)**:
   - Complaint report schema mapping fields: `userId`, coordinates, address, and status. Indexed for geolocated proximity searches.
-- **[Comment.js](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/server/models/Comment.js)**:
+- **[Comment.js](../../server/models/Comment.js)**:
   - Stores replies linking issue IDs and user IDs.
-- **[Vote.js](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/server/models/Vote.js)**:
+- **[Vote.js](../../server/models/Vote.js)**:
   - Stores Agree/Disagree verification votes. Constrained to one vote per user per issue via compound indexes.
 
 ---

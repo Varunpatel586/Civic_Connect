@@ -40,10 +40,10 @@ graph TD
 ```
 
 ### 1. Client Presentation Layer (UI)
-Consists of Screens (views representing full screens) and Widgets (reusable layout components). The views are kept as dumb as possible, delegating actions to [AppProvider](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/providers/app_provider.dart) and displaying state values.
+Consists of Screens (views representing full screens) and Widgets (reusable layout components). The views are kept as dumb as possible, delegating actions to [AppProvider](../../../../lib/providers/app_provider.dart) and displaying state values.
 
 ### 2. Client State Management (Provider)
-[AppProvider](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/providers/app_provider.dart) uses Flutter's `ChangeNotifier` to hold the application's global state:
+[AppProvider](../../../../lib/providers/app_provider.dart) uses Flutter's `ChangeNotifier` to hold the application's global state:
 - Current authenticated user (`currentUser` of type `UserProfile`)
 - Current user GPS location (`currentPosition` and `currentAddress`)
 - Lists of reported issues (`nearbyIssues` and `userIssues`)
@@ -53,12 +53,12 @@ The UI listens to this provider using `context.watch<AppProvider>()` or `Provide
 
 ### 3. Client REST Service Layer
 Services encapsulate HTTP REST endpoints and platform functions:
-- [ApiClient](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/api_client.dart): Generic HTTP client wrapping headers, JWT authentication token loading, and multipart requests.
-- [AuthService](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/auth_service.dart): Connects to `/auth/login`, `/auth/signup`, and `/auth/profile`.
-- [IssueService](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/issue_service.dart): Queries `/issues/nearby`, `/issues/user`, and `/issues/:id/vote`.
-- [CommentService](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/comment_service.dart): Queries `/comments/issue/:id` CRUD routes.
-- [LocationService](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/location_service.dart): Fetches GPS coordinates and translates them into street addresses using geocoding.
-- [DeepLinkService](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/deep_link_service.dart): Captures URL deep links for post-OAuth redirect callbacks.
+- [ApiClient](../../../../lib/services/api_client.dart): Generic HTTP client wrapping headers, JWT authentication token loading, and multipart requests.
+- [AuthService](../../../../lib/services/auth_service.dart): Connects to `/auth/login`, `/auth/signup`, and `/auth/profile`.
+- [IssueService](../../../../lib/services/issue_service.dart): Queries `/issues/nearby`, `/issues/user`, and `/issues/:id/vote`.
+- [CommentService](../../../../lib/services/comment_service.dart): Queries `/comments/issue/:id` CRUD routes.
+- [LocationService](../../../../lib/services/location_service.dart): Fetches GPS coordinates and translates them into street addresses using geocoding.
+- [DeepLinkService](../../../../lib/services/deep_link_service.dart): Captures URL deep links for post-OAuth redirect callbacks.
 
 ---
 
