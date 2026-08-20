@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+# Client config is committed on purpose: it holds no secrets.
+!.env.client
 
 # Miscellaneous
 *.class
@@ -110,3 +112,8 @@ app.*.map.json
 /android/app/release
 
 server/node_modules
+# Superpowers brainstorming session files
+.superpowers/
+
+# Browser automation scratch output
+.playwright-mcp/
