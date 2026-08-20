@@ -64,7 +64,9 @@ void main() {
     await _pumpCard(tester, _issue());
 
     expect(find.text('Severe pothole on Ring Road'), findsOneWidget);
-    expect(find.text('POTHOLE'), findsOneWidget);
+    // Category, ward and age share one meta line, so match the content rather
+    // than assuming each gets its own Text.
+    expect(find.textContaining('Pothole'), findsWidgets);
   });
 
   testWidgets('shows a quotable complaint reference', (tester) async {
@@ -76,13 +78,13 @@ void main() {
   testWidgets('shows the locality parsed out of the address', (tester) async {
     await _pumpCard(tester, _issue());
 
-    expect(find.text('Ahmedabad'), findsOneWidget);
+    expect(find.textContaining('Ahmedabad'), findsWidgets);
   });
 
   testWidgets('says so plainly when no address was recorded', (tester) async {
     await _pumpCard(tester, _issue(address: null));
 
-    expect(find.text('Location unrecorded'), findsOneWidget);
+    expect(find.textContaining('Location unrecorded'), findsWidgets);
   });
 
   testWidgets('renders the status badge', (tester) async {
@@ -122,9 +124,7 @@ void main() {
     expect(find.textContaining('Overdue by'), findsOneWidget);
   });
 
-  testWidgets('an overdue card is tinted so it cannot be scrolled past', (
-    tester,
-  ) async {
+  testWidgets('an overdue card carries the alert palette', (tester) async {
     await _pumpCard(
       tester,
       _issue(
@@ -133,11 +133,19 @@ void main() {
       ),
     );
 
-    final tinted = tester
+    // The card body no longer washes amber — that weight belongs to the
+    // officer's queue, where rows are scanned in bulk. Here the badge and the
+    // deadline carry it, so assert on the palette actually being applied.
+    final painted = tester
         .widgetList<Container>(find.byType(Container))
-        .where((c) => c.color == StatusColors.overdue.background);
+        .where(
+          (c) =>
+              c.decoration is BoxDecoration &&
+              (c.decoration as BoxDecoration).color ==
+                  StatusColors.overdue.background,
+        );
 
-    expect(tinted, isNotEmpty);
+    expect(painted, isNotEmpty);
   });
 
   testWidgets('a resolved complaint shows no countdown', (tester) async {
