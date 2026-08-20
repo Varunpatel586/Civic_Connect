@@ -117,3 +117,10 @@ server/node_modules
 
 # Browser automation scratch output
 .playwright-mcp/
+
+# Generated plugin registrants
+**/generated_plugin_registrant.cc
+**/generated_plugin_registrant.h
+**/GeneratedPluginRegistrant.swift
+**/generated_plugins.cmake
+

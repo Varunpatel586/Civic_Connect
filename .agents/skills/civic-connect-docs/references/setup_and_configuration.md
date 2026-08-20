@@ -5,12 +5,16 @@ This document provides setup instructions, environment variables configuration, 
 ---
 
 ## Prerequisites
-Before running the application, make sure you have the following installed:
-- **Flutter SDK**: `^3.9.2` (run `flutter --version` to check)
-- **Dart SDK**: `^3.9.2`
-- **Node.js**: `^18.x` or higher (run `node -v` to check)
-- **MongoDB**: A running local MongoDB instance (`mongodb://localhost:27017`) or a MongoDB Atlas connection string.
-- **Android Studio / Xcode** (for emulation tools)
+Before running the application, verify your development environment matches the exact toolchain versions detailed in [ENVIRONMENT_VERSIONS.md](../../../ENVIRONMENT_VERSIONS.md).
+
+Key requirements:
+* **Flutter SDK**: `3.35.3` (Stable)
+* **Dart SDK**: `3.9.2`
+* **JDK (Java Development Kit)**: `21.0.11` (Java 21)
+* **Android NDK**: `27.0.12077973`
+* **Node.js**: `^20.x` LTS
+* **MongoDB**: `^7.x` or `^8.x`
+
 
 ---
 
