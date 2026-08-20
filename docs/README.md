@@ -26,6 +26,9 @@ Maps user interface components. Detailing stateful/stateless views, status color
 ### 6. [Setup and Configuration Guide](setup_and_configuration.md)
 Detailed walkthrough explaining how to write the `.env` settings file, connect to local/cloud MongoDB instances, configure local multer upload folders, handle deep link redirect tokens, and run both backend and client locally.
 
+### 7. [Clustering Engine & Deduplication](clustering_engine.md)
+Detailed design, system architecture, database updates, Python FastAPI model comparisons, and UI updates for the automated issue clustering pipeline.
+
 ---
 
 ## Key Project Code Links

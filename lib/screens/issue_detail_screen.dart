@@ -245,28 +245,97 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
 /// The one element here that is not a floating card: it is the evidence, and
 /// insetting it would make it read as an illustration rather than a record of
 /// what is actually there.
-class _Evidence extends StatelessWidget {
+class _Evidence extends StatefulWidget {
   final Issue issue;
 
   const _Evidence({required this.issue});
 
   @override
+  State<_Evidence> createState() => _EvidenceState();
+}
+
+class _EvidenceState extends State<_Evidence> {
+  int _currentIndex = 0;
+
+  @override
   Widget build(BuildContext context) {
+    final urls = widget.issue.imageUrls.isNotEmpty
+        ? widget.issue.imageUrls
+        : [widget.issue.imageUrl];
+
     return AspectRatio(
       aspectRatio: 4 / 3,
-      child: CachedNetworkImage(
-        imageUrl: ApiClient().normalizeUrl(issue.imageUrl),
-        fit: BoxFit.cover,
-        fadeInDuration: const Duration(milliseconds: 180),
-        placeholder: (context, url) => Container(color: AppColors.slate100),
-        errorWidget: (context, url, error) => Container(
-          color: AppColors.slate100,
-          child: const Icon(
-            Icons.image_not_supported_outlined,
-            color: AppColors.slate400,
-            size: 32,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          PageView.builder(
+            itemCount: urls.length,
+            onPageChanged: (index) {
+              setState(() {
+                _currentIndex = index;
+              });
+            },
+            itemBuilder: (context, index) {
+              return CachedNetworkImage(
+                imageUrl: ApiClient().normalizeUrl(urls[index]),
+                fit: BoxFit.cover,
+                fadeInDuration: const Duration(milliseconds: 180),
+                placeholder: (context, url) => Container(color: AppColors.slate100),
+                errorWidget: (context, url, error) => Container(
+                  color: AppColors.slate100,
+                  child: const Icon(
+                    Icons.image_not_supported_outlined,
+                    color: AppColors.slate400,
+                    size: 32,
+                  ),
+                ),
+              );
+            },
           ),
-        ),
+          if (urls.length > 1) ...[
+            Positioned(
+              bottom: 12,
+              left: 0,
+              right: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  urls.length,
+                  (index) => Container(
+                    width: 7,
+                    height: 7,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _currentIndex == index
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 14,
+              top: 14,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_currentIndex + 1}/${urls.length}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -365,6 +434,36 @@ class _Summary extends StatelessWidget {
           if (!sla.isClosed) ...[
             const SizedBox(height: 12),
             SlaLabel(sla: sla),
+          ],
+          if (issue.reportCount > 1) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.slate100,
+                borderRadius: BorderRadius.circular(AppTheme.radius),
+                border: Border.all(color: AppColors.slate200),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.people_alt_outlined,
+                    color: AppColors.slate600,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Reported by ${issue.reportCount} citizens. Merged to amplify community priority.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.slate600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
           if (issue.description?.trim().isNotEmpty ?? false) ...[
             const SizedBox(height: 15),

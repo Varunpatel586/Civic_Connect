@@ -12,6 +12,7 @@ const jwt = require('jsonwebtoken');
 const sla = require('../config/sla');
 const config = require('../config/env');
 const { wardFilter, officerCoversWard } = require('../config/wards');
+const issueController = require('../controllers/issueController');
 
 const getUserIdFromRequest = (req) => {
   const authHeader = req.header('Authorization');
@@ -110,6 +111,7 @@ const serializeIssue = (issue, { userVote = null, includeHistory = false } = {})
     address: issue.address,
     ward: issue.ward || null,
     status: issue.status,
+    report_count: issue.reportCount || 1,
     agree_count: issue.agreeCount,
     disagree_count: issue.disagreeCount,
     user_vote: userVote,
@@ -170,77 +172,7 @@ router.post('/upload', auth, upload.single('photo'), (req, res) => {
 // @route   POST api/issues
 // @desc    Create new issue
 // @access  Private
-router.post('/', auth, async (req, res) => {
-  const { title, description, category, imageUrl, imageUrls, latitude, longitude, address } = req.body;
-
-  try {
-    // Validate before writing. Previously a missing category threw inside
-    // `category.replace(...)` and surfaced as an opaque 500, and absent
-    // coordinates were coerced to 0, 0 — a complaint in the Gulf of Guinea.
-    const allowedCategories = Issue.schema.path('category').enumValues;
-    if (!category || !allowedCategories.includes(category)) {
-      return res.status(400).json({
-        message: `Category must be one of: ${allowedCategories.join(', ')}`,
-      });
-    }
-
-    if (!imageUrl || typeof imageUrl !== 'string') {
-      return res.status(400).json({ message: 'A complaint needs at least one photograph' });
-    }
-
-    const lat = Number.parseFloat(latitude);
-    const lng = Number.parseFloat(longitude);
-
-    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
-      return res.status(400).json({ message: 'Latitude must be between -90 and 90' });
-    }
-    if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
-      return res.status(400).json({ message: 'Longitude must be between -180 and 180' });
-    }
-    if (lat === 0 && lng === 0) {
-      return res.status(400).json({
-        message: 'A complaint needs a real location before it can be filed',
-      });
-    }
-
-    const trimmedDescription = (description || '').toString().trim();
-    if (trimmedDescription.length > 2000) {
-      return res.status(400).json({ message: 'Description is too long (2000 characters maximum)' });
-    }
-
-    const resolvedTitle = (title || category.replace('_', ' ').toUpperCase())
-      .toString()
-      .trim()
-      .slice(0, 140);
-
-    const newIssue = new Issue({
-      userId: req.user.id,
-      title: resolvedTitle,
-      description: trimmedDescription,
-      category,
-      imageUrl,
-      imageUrls: Array.isArray(imageUrls) && imageUrls.length > 0 ? imageUrls : [imageUrl],
-      latitude: lat,
-      longitude: lng,
-      address,
-      // Open the record with its filing entry so the timeline is never empty.
-      statusHistory: [
-        {
-          status: 'Pending',
-          changedBy: req.user.id,
-          changedAt: new Date(),
-          note: 'Complaint filed',
-        },
-      ],
-    });
-
-    const issue = await newIssue.save();
-    res.status(201).json(issue);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
+router.post('/', auth, issueController.createIssue);
 
 // @route   GET api/issues/nearby
 // @desc    Fetch issues near a location
