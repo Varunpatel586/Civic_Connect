@@ -34,6 +34,8 @@ Defined in [issue.dart](../lib/models/issue.dart). Maps civic complaints.
 | `title` | `String` | Short summary title of the report |
 | `description` | `String?` | Detailed complaint explanation |
 | `imageUrl` | `String` | Public URL of primary captured image |
+| `imageUrls` | `List<String>` | Supporting images list uploaded for this complaint (or clustered reports) |
+| `reportCount` | `int` | Count of duplicate reports merged into this issue (default: `1`) |
 | `latitude` | `double` | Precise GPS Latitude |
 | `longitude` | `double` | Precise GPS Longitude |
 | `timestamp` | `DateTime` | Captured time |

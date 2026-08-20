@@ -5,7 +5,7 @@ This document outlines the data model classes defined in `lib/models/`. These mo
 ---
 
 ## 1. UserProfile
-Defined in [user_profile.dart](../../../../lib/models/user_profile.dart). Maps standard and administrative accounts from the `users` database collection.
+Defined in [user_profile.dart](../lib/models/user_profile.dart). Maps standard and administrative accounts from the `users` database collection.
 
 ### Fields
 | Field Name | Type | Description |
@@ -24,7 +24,7 @@ Defined in [user_profile.dart](../../../../lib/models/user_profile.dart). Maps s
 ---
 
 ## 2. Issue
-Defined in [issue.dart](../../../../lib/models/issue.dart). Maps civic complaints.
+Defined in [issue.dart](../lib/models/issue.dart). Maps civic complaints.
 
 ### Fields
 | Field Name | Type | Description |
@@ -34,6 +34,8 @@ Defined in [issue.dart](../../../../lib/models/issue.dart). Maps civic complaint
 | `title` | `String` | Short summary title of the report |
 | `description` | `String?` | Detailed complaint explanation |
 | `imageUrl` | `String` | Public URL of primary captured image |
+| `imageUrls` | `List<String>` | Supporting images list uploaded for this complaint (or clustered reports) |
+| `reportCount` | `int` | Count of duplicate reports merged into this issue (default: `1`) |
 | `latitude` | `double` | Precise GPS Latitude |
 | `longitude` | `double` | Precise GPS Longitude |
 | `timestamp` | `DateTime` | Captured time |
@@ -47,7 +49,7 @@ Defined in [issue.dart](../../../../lib/models/issue.dart). Maps civic complaint
 ---
 
 ## 3. Comment
-Defined in [comment.dart](../../../../lib/models/comment.dart). Represents a user response under a specific issue.
+Defined in [comment.dart](../lib/models/comment.dart). Represents a user response under a specific issue.
 
 ### Fields
 | Field Name | Type | Description |
@@ -62,7 +64,7 @@ Defined in [comment.dart](../../../../lib/models/comment.dart). Represents a use
 ---
 
 ## 4. Vote
-Defined in [vote.dart](../../../../lib/models/vote.dart). Represents the database record of verification votes.
+Defined in [vote.dart](../lib/models/vote.dart). Represents the database record of verification votes.
 
 ### Fields
 | Field Name | Type | Description |
@@ -72,3 +74,4 @@ Defined in [vote.dart](../../../../lib/models/vote.dart). Represents the databas
 | `userId` | `String` | voter's user profile ID |
 | `voteType` | `String` | Type classification |
 | `createdAt` | `DateTime` | Date voted |
+

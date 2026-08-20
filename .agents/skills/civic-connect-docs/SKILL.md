@@ -34,7 +34,10 @@ Maps the presentation layer: every screen and reusable widget, plus the Municipa
 ### 6. [setup_and_configuration.md](../../../.agents/skills/civic-connect-docs/references/setup_and_configuration.md)
 Detailed walkthrough explaining how to write the `.env` settings file, connect to local/cloud MongoDB instances, configure local multer upload folders, handle deep link redirect tokens, and run both backend and client locally.
 
-### 7. [ENVIRONMENT_VERSIONS.md](../../../ENVIRONMENT_VERSIONS.md)
+### 7. [clustering_engine.md](../../../.agents/skills/civic-connect-docs/references/clustering_engine.md)
+Detailed design, system architecture, database schema updates, Python FastAPI model comparisons, and UI updates for the automated issue clustering pipeline.
+
+### 8. [ENVIRONMENT_VERSIONS.md](../../../ENVIRONMENT_VERSIONS.md)
 Reference sheet detailing the exact versions of the development environment stack (Flutter SDK, Dart SDK, JDK, Android NDK/SDK, Node.js, and MongoDB) along with setup and installation guides.
 
 
