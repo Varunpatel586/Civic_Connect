@@ -25,7 +25,7 @@ This document serves as an updated, exhaustive report detailing all aspects of t
 ## 2. High-Level Technical Stack
 
 The application leverage the following technologies:
-- **Client Framework**: [Flutter](https://flutter.dev/) (SDK `^3.9.2`, target Dart `^3.9.2`) utilizing Material 3.
+- **Client Framework**: [Flutter](https://flutter.dev/) (SDK `3.35.3`, target Dart `3.9.2`) utilizing Material 3.
 - **Backend API**: [Node.js & Express](https://expressjs.com/) with Multer for binary image handling and jsonwebtoken/bcryptjs for auth security.
 - **Database**: [MongoDB](https://www.mongodb.com/) via Mongoose ODM.
 - **Client State Management**: [Provider](https://pub.dev/packages/provider) for reactive state propagation and global model handling.
@@ -65,6 +65,9 @@ Below is a detailed walkthrough of all implementation files.
   - Queries `/issues/nearby`, `/issues/user`, and `/issues/:id/vote`.
 - **[comment_service.dart](../../lib/services/comment_service.dart)**:
   - Queries `/comments/issue/:id` CRUD routes.
+- **[admin_service.dart](../../lib/services/admin_service.dart)**:
+  - Provides REST methods for municipal officers, including `getStats()`, `getQueue()`, and `updateStatus()`.
+
 
 ### Server-Side Files (`server/`)
 - **[server.js](../../server/server.js)**:
@@ -132,20 +135,12 @@ erDiagram
         date createdAt
         date updatedAt
     }
-    upvotes {
-        ObjectId id PK
-        ObjectId issueId FK
-        ObjectId userId FK
-        date createdAt
-    }
 
     users ||--o{ issues : "reports"
     users ||--o{ comments : "writes"
     users ||--o{ votes : "casts"
-    users ||--o{ upvotes : "toggles"
     issues ||--o{ comments : "receives"
     issues ||--o{ votes : "receives"
-    issues ||--o{ upvotes : "receives"
 ```
 
 ### Constraints & Security

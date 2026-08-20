@@ -72,3 +72,4 @@ Defined in [vote.dart](../lib/models/vote.dart). Represents the database record 
 | `userId` | `String` | voter's user profile ID |
 | `voteType` | `String` | Type classification |
 | `createdAt` | `DateTime` | Date voted |
+

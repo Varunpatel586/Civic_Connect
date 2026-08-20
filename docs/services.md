@@ -61,18 +61,18 @@ Located in [location_service.dart](../lib/services/location_service.dart). Inter
 - **`getCurrentPosition()`**: Fetches raw GPS coordinates (`Position`) using High accuracy.
 - **`getAddressFromLatLng(double latitude, double longitude)`**: Reverse-geocodes coordinate values to formatted street addresses.
 
----
-
-## 6. UpvoteService
-Located in [upvote_service.dart](../lib/services/upvote_service.dart). Handles upvoting counts.
+## 6. AdminService
+Located in [admin_service.dart](../lib/services/admin_service.dart). Handles municipal officer operations.
 
 ### Key API
-- **`toggleUpvote(String issueId)`**: Performs `POST /issues/:id/upvote` to toggle upvotes in MongoDB.
-- **`getUpvoteCount(String issueId)`**: Queries `GET /issues/:id/upvote/count`.
-- **`streamUpvoteCount(String issueId)`**: Emits real-time upvote streams by polling `getUpvoteCount()` every 5 seconds.
+- **`getStats()`**: Fetches general ward counters and statistics (`WardStats`) via `GET /issues/stats`.
+- **`getQueue({String? status, String? category})`**: Fetches the ranked triage queue (`List<Issue>`) from `GET /issues/queue`.
+- **`updateStatus({required String issueId, required String status, String note})`**: Changes a complaint's status and adds an explanation note via `PATCH /issues/:issueId/status`.
 
 ---
+
 
 ## 7. DeepLinkService
 Located in [deep_link_service.dart](../lib/services/deep_link_service.dart). Captures incoming URL streams, extracts token parameters, and updates `ApiClient` accordingly.
 - **`_handleDeepLink(Uri uri)`**: Parses query parameters: `uri.queryParameters['token']`.
+

@@ -135,3 +135,4 @@ MongoDB collections are indexed to ensure queries are highly performant:
    - `{ issueId: 1, userId: 1 }` (Unique) - Enforces that a profile can cast at most **one** Agree/Disagree vote per reported issue.
 4. **`upvotes` indexes**:
    - `{ issueId: 1, userId: 1 }` (Unique) - Enforces that a profile can toggle at most **one** legacy upvote per reported issue.
+
