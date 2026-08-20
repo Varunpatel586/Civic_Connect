@@ -109,3 +109,4 @@ In `android/app/src/main/AndroidManifest.xml`, configure an intent filter inside
 When OAuth redirects to this URI, the backend server appends the user JWT token:
 `io.supabase.civicconnect://login-callback?token=<jwt-token>`
 The client-side `DeepLinkService` captures this token and updates headers.
+
