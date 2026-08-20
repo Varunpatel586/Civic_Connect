@@ -15,7 +15,7 @@ const IssueSchema = new mongoose.Schema({
   category: {
     type: String,
     required: true,
-    enum: ['pothole', 'street_light', 'water', 'electricity', 'garbage', 'road', 'drainage', 'other'],
+    enum: ['pothole', 'street_light', 'water', 'electricity', 'garbage', 'road', 'drainage', 'other', 'Potholes & Road Damage', 'Garbage Pile-ups', 'Broken Street Lights'],
     default: 'other',
   },
   description: {
@@ -26,9 +26,19 @@ const IssueSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  imageUrls: {
-    type: [String],
-    default: [],
+  // Clustered Multi-Reporter and Multi-Image Support
+  reporters: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  }],
+  imageUrls: [{
+    type: String,
+    required: true
+  }],
+  reportCount: {
+    type: Number,
+    default: 1
   },
   latitude: {
     type: Number,
@@ -42,19 +52,18 @@ const IssueSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
-  // GeoJSON mirror of latitude/longitude, kept in sync by the hook below.
-  // Proximity search needs this shape; the flat pair stays because every
-  // existing client reads it.
+  // GeoJSON coordinate format for geospatial indexing
   location: {
     type: {
       type: String,
       enum: ['Point'],
       default: 'Point',
+      required: true
     },
     coordinates: {
-      type: [Number], // [longitude, latitude] — GeoJSON order, not lat/lng
-      default: undefined,
-    },
+      type: [Number], // Format: [longitude, latitude] -> NOTE: GeoJSON requires Longitude first!
+      required: true
+    }
   },
   // Derived from the geocoded address. Scopes the municipal queue so an officer
   // sees the complaints they are answerable for.
@@ -97,23 +106,10 @@ const IssueSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
-  agreeCount: {
-    type: Number,
-    default: 0,
-  },
-  disagreeCount: {
-    type: Number,
-    default: 0,
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
+  agreeCount: { type: Number, default: 0 },
+  disagreeCount: { type: Number, default: 0 },
+  slaDeadline: { type: Date }
+}, { timestamps: true });
 
 /**
  * Keeps the GeoJSON point and the ward in step with the flat fields.
@@ -122,7 +118,17 @@ const IssueSchema = new mongoose.Schema({
  * `insertMany`, which skips save hooks.
  */
 IssueSchema.pre('validate', function syncDerivedFields(next) {
-  if (typeof this.latitude === 'number' && typeof this.longitude === 'number') {
+  if (this.reporters && this.reporters.length > 0 && !this.userId) {
+    this.userId = this.reporters[0];
+  }
+  if (this.imageUrls && this.imageUrls.length > 0 && !this.imageUrl) {
+    this.imageUrl = this.imageUrls[0];
+  }
+
+  if (this.location && this.location.coordinates && this.location.coordinates.length === 2) {
+    this.longitude = this.location.coordinates[0];
+    this.latitude = this.location.coordinates[1];
+  } else if (typeof this.latitude === 'number' && typeof this.longitude === 'number') {
     this.location = {
       type: 'Point',
       coordinates: [this.longitude, this.latitude],
@@ -136,9 +142,9 @@ IssueSchema.pre('validate', function syncDerivedFields(next) {
   next();
 });
 
-// Real geospatial index. The previous compound index on the flat pair could not
-// answer a proximity query, which is why /nearby used to scan every document.
+// Crucial: 2dsphere index for radius proximity search
 IssueSchema.index({ location: '2dsphere' });
+IssueSchema.index({ category: 1, status: 1 });
 IssueSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Issue', IssueSchema);

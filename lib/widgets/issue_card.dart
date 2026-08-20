@@ -111,20 +111,56 @@ class _Evidence extends StatelessWidget {
   Widget build(BuildContext context) {
     return AspectRatio(
       aspectRatio: 16 / 10,
-      child: CachedNetworkImage(
-        imageUrl: ApiClient().normalizeUrl(issue.imageUrl),
-        fit: BoxFit.cover,
-        fadeInDuration: const Duration(milliseconds: 180),
-        placeholder: (context, url) =>
-            Container(color: AppColors.slate100),
-        errorWidget: (context, url, error) => Container(
-          color: AppColors.slate100,
-          child: const Icon(
-            Icons.image_not_supported_outlined,
-            color: AppColors.slate400,
-            size: 26,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CachedNetworkImage(
+            imageUrl: ApiClient().normalizeUrl(issue.imageUrl),
+            fit: BoxFit.cover,
+            fadeInDuration: const Duration(milliseconds: 180),
+            placeholder: (context, url) =>
+                Container(color: AppColors.slate100),
+            errorWidget: (context, url, error) => Container(
+              color: AppColors.slate100,
+              child: const Icon(
+                Icons.image_not_supported_outlined,
+                color: AppColors.slate400,
+                size: 26,
+              ),
+            ),
           ),
-        ),
+          if (issue.imageUrls.length > 1)
+            Positioned(
+              right: 12,
+              top: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.collections_outlined,
+                      color: Colors.white,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${issue.imageUrls.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -184,6 +220,34 @@ class _Ledger extends StatelessWidget {
                 )
               : SlaLabel(sla: sla),
         ),
+        if (issue.reportCount > 1) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: AppColors.slate100,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.people_outline,
+                  color: AppColors.slate600,
+                  size: 12,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${issue.reportCount} reports',
+                  style: AppTypography.meta().copyWith(
+                    color: AppColors.slate600,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+        ],
         _Tally(
           icon: Icons.arrow_upward_rounded,
           count: issue.agreeCount,

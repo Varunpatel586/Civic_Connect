@@ -15,6 +15,7 @@ class Issue {
   final DateTime createdAt;
   final int agreeCount;
   final int disagreeCount;
+  final int reportCount;
   final String? address;
 
   /// Administrative ward, derived server-side from the geocoded address.
@@ -47,6 +48,7 @@ class Issue {
     required this.createdAt,
     this.agreeCount = 0,
     this.disagreeCount = 0,
+    this.reportCount = 1,
     this.address,
     this.ward,
     this.userVote,
@@ -77,6 +79,7 @@ class Issue {
           : DateTime.now(),
       agreeCount: (json['agree_count'] as int?) ?? 0,
       disagreeCount: (json['disagree_count'] as int?) ?? 0,
+      reportCount: (json['report_count'] as int?) ?? 1,
       address: json['address']?.toString(),
       ward: json['ward']?.toString(),
       userVote: json['user_vote']?.toString(),
@@ -112,6 +115,7 @@ class Issue {
       'created_at': createdAt.toIso8601String(),
       'agree_count': agreeCount,
       'disagree_count': disagreeCount,
+      'report_count': reportCount,
       'address': address,
       'ward': ward,
       'user_vote': userVote,

@@ -114,12 +114,36 @@ API_BASE_URL=http://10.0.2.2:5000/api
 | iOS simulator / web | `http://localhost:5000/api` |
 | Physical device | `http://<your-LAN-IP>:5000/api` |
 
-### 2. Backend
+### 2. Backend & AI Microservice
+
+To run the Express API server and the Python FastAPI vision clustering microservice concurrently:
 
 ```bash
 cd server
 npm install
+npm run dev
+```
+
+This script will spin up:
+* The Express server at `http://localhost:5000` (reloads automatically using `nodemon`).
+* The Python FastAPI vision clustering service at `http://localhost:8000` (reloads automatically using `uvicorn`).
+
+> [!IMPORTANT]
+> Make sure that the Python microservice dependencies in `ai_service/requirements.txt` are installed in your active environment before starting.
+
+Alternatively, to launch them separately:
+
+**Run Express Server only:**
+```bash
+cd server
 npm start
+```
+
+**Run Python FastAPI service only:**
+```bash
+cd ai_service
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### 3. Seed demo data (optional)
