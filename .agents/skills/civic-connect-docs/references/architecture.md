@@ -20,6 +20,8 @@ The project separates frontend client views from backend database operations usi
     ├── providers/       # ChangeNotifier state providers
     ├── screens/         # Flutter UI pages
     ├── services/        # Flutter REST API client service layer
+    ├── theme/           # Municipal Navy: colours, typography, ThemeData
+    ├── utils/           # SLA policy, complaint references, category taxonomy
     └── widgets/         # Reusable layouts and custom views
 ```
 

@@ -18,7 +18,7 @@ This document serves as an updated, exhaustive report detailing all aspects of t
 1. **Reduce Friction in Reporting**: Allow citizens to capture photos and submit complaints immediately with automated location pinpointing.
 2. **Community Validation (Democratic Verification)**: Prevent fake or duplicate complaints by allowing the community to vote ("Agree" or "Disagree") on reported issues.
 3. **Transparency**: Enable tracking of reported issues through status changes (`Pending`, `In Progress`, `Resolved`, `Rejected`).
-4. **Offline Capability & Mock Fallbacks**: Present simulated local feeds to guarantee usability even during initial setup or remote tests.
+4. **Accountability Against a Clock**: Hold every complaint to a response deadline derived from its category (`SlaPolicy`), surface overdue work first in the officer's queue, and show the same countdown to citizens that officers see.
 
 ---
 
