@@ -5,7 +5,7 @@ This document describes the services located in `lib/services/` that handle exte
 ---
 
 ## 1. ApiClient
-Located in [api_client.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/api_client.dart). The core network connector that manages:
+Located in [api_client.dart](../../../../lib/services/api_client.dart). The core network connector that manages:
 - Reading backend URL (`API_BASE_URL`) from dotenv.
 - Caching JWT authentication tokens locally via `SharedPreferences`.
 - Appending Authorization headers (`Bearer <token>`) automatically.
@@ -15,7 +15,7 @@ Located in [api_client.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/l
 ---
 
 ## 2. AuthService
-Located in [auth_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/auth_service.dart). Manages backend user session routes.
+Located in [auth_service.dart](../../../../lib/services/auth_service.dart). Manages backend user session routes.
 
 ### Key API
 - **`isAuthenticated`**: Checks if the client has a cached JWT token.
@@ -29,7 +29,7 @@ Located in [auth_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect
 ---
 
 ## 3. IssueService
-Located in [issue_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/issue_service.dart). Interacts with backend issue routes.
+Located in [issue_service.dart](../../../../lib/services/issue_service.dart). Interacts with backend issue routes.
 
 ### Key API
 - **`getNearbyIssues({required double latitude, required double longitude, double radiusKm = 5.0, int limit = 50})`**: Queries `GET /issues/nearby`. Resolves nearby reports based on coordinate distance.
@@ -42,7 +42,7 @@ Located in [issue_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connec
 ---
 
 ## 4. CommentService
-Located in [comment_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/comment_service.dart). Manages comment sections under reports.
+Located in [comment_service.dart](../../../../lib/services/comment_service.dart). Manages comment sections under reports.
 
 ### Key API
 - **`getCommentsByIssueId(String issueId)`**: Queries `GET /comments/issue/:issueId`.
@@ -53,7 +53,7 @@ Located in [comment_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Conn
 ---
 
 ## 5. LocationService
-Located in [location_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/location_service.dart). Interacts with native GPS and geocoding plugins.
+Located in [location_service.dart](../../../../lib/services/location_service.dart). Interacts with native GPS and geocoding plugins.
 
 ### Key API
 - **`isLocationServiceEnabled()`**: Determines if system GPS toggle is switched on.
@@ -64,7 +64,7 @@ Located in [location_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Con
 ---
 
 ## 6. UpvoteService
-Located in [upvote_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/upvote_service.dart). Handles upvoting counts.
+Located in [upvote_service.dart](../../../../lib/services/upvote_service.dart). Handles upvoting counts.
 
 ### Key API
 - **`toggleUpvote(String issueId)`**: Performs `POST /issues/:id/upvote` to toggle upvotes in MongoDB.
@@ -74,5 +74,5 @@ Located in [upvote_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Conne
 ---
 
 ## 7. DeepLinkService
-Located in [deep_link_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/deep_link_service.dart). Captures incoming URL streams, extracts token parameters, and updates `ApiClient` accordingly.
+Located in [deep_link_service.dart](../../../../lib/services/deep_link_service.dart). Captures incoming URL streams, extracts token parameters, and updates `ApiClient` accordingly.
 - **`_handleDeepLink(Uri uri)`**: Parses query parameters: `uri.queryParameters['token']`.

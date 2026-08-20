@@ -57,8 +57,9 @@ class AuthService {
         final token = data['token'];
         await _apiClient.setToken(token);
       } else {
-        final errorData = jsonDecode(response.body);
-        throw AppAuthException(errorData['message'] ?? 'Invalid email or password');
+        throw AppAuthException(
+          _apiClient.errorMessage(response, 'Invalid email or password'),
+        );
       }
     } catch (e) {
       debugPrint('Sign in error: $e');
@@ -89,8 +90,9 @@ class AuthService {
         final token = data['token'];
         await _apiClient.setToken(token);
       } else {
-        final errorData = jsonDecode(response.body);
-        throw AppAuthException(errorData['message'] ?? 'Failed to create user account');
+        throw AppAuthException(
+          _apiClient.errorMessage(response, 'Could not create the account'),
+        );
       }
     } catch (e) {
       debugPrint('Sign up error: $e');
@@ -124,8 +126,9 @@ class AuthService {
       final response = await _apiClient.put('/auth/profile', updates);
 
       if (response.statusCode != 200) {
-        final errorData = jsonDecode(response.body);
-        throw AppAuthException(errorData['message'] ?? 'Failed to update profile');
+        throw AppAuthException(
+          _apiClient.errorMessage(response, 'Could not update the profile'),
+        );
       }
     } catch (e) {
       debugPrint('Error updating profile: $e');
@@ -165,8 +168,9 @@ class AuthService {
         final token = data['token'];
         await _apiClient.setToken(token);
       } else {
-        final errorData = jsonDecode(response.body);
-        throw AppAuthException(errorData['message'] ?? 'Google auth exchange failed');
+        throw AppAuthException(
+          _apiClient.errorMessage(response, 'Google sign-in failed'),
+        );
       }
     } catch (e) {
       debugPrint('Google sign in error: $e');

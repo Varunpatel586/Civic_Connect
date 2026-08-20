@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:geocoding/geocoding.dart';
 import 'api_client.dart';
 import '../models/models.dart';
+import '../utils/issue_categories.dart';
 
 class IssueService {
   final ApiClient _apiClient = ApiClient();
@@ -43,61 +44,67 @@ class IssueService {
     }
   }
 
+  /// Files a new complaint.
+  ///
+  /// The category is passed in rather than guessed from the title: the
+  /// submission form already asked the citizen directly, and keyword-sniffing a
+  /// title silently misfiled anything phrased unusually.
   Future<Issue> createIssue({
-    required String title,
-    required String? description,
-    required String imageUrl,
+    required String category,
+    required String description,
+    required List<String> imageUrls,
     required double latitude,
     required double longitude,
+    String? address,
+    String? title,
   }) async {
-    try {
-      // Get address from coordinates
-      String? address;
+    if (imageUrls.isEmpty) {
+      throw ArgumentError('A complaint needs at least one photograph');
+    }
+
+    // Resolve an address if the caller did not already have one. Best-effort:
+    // the coordinates are what the municipality dispatches on.
+    var resolved = address;
+    if (resolved == null || resolved.trim().isEmpty) {
       try {
         final placemarks = await placemarkFromCoordinates(latitude, longitude);
         if (placemarks.isNotEmpty) {
           final place = placemarks.first;
-          address = '${place.street}, ${place.locality}, ${place.postalCode}, ${place.country}';
+          resolved =
+              '${place.street}, ${place.locality}, ${place.postalCode}, ${place.country}';
         }
       } catch (e) {
-        debugPrint('Error getting address: $e');
+        debugPrint('Could not reverse geocode: $e');
       }
+    }
 
-      // Map categories from title or default to 'other'
-      String category = 'other';
-      final lowerTitle = title.toLowerCase();
-      if (lowerTitle.contains('pothole')) category = 'pothole';
-      else if (lowerTitle.contains('light')) category = 'street_light';
-      else if (lowerTitle.contains('water')) category = 'water';
-      else if (lowerTitle.contains('electricity') || lowerTitle.contains('power')) category = 'electricity';
-      else if (lowerTitle.contains('garbage') || lowerTitle.contains('trash')) category = 'garbage';
-      else if (lowerTitle.contains('road')) category = 'road';
-      else if (lowerTitle.contains('drain')) category = 'drainage';
-
+    try {
       final response = await _apiClient.post('/issues', {
-        'title': title.trim(),
-        'description': description?.trim() ?? '',
+        'title': (title?.trim().isNotEmpty ?? false)
+            ? title!.trim()
+            : IssueCategories.labelFor(category),
+        'description': description.trim(),
         'category': category,
-        'imageUrl': imageUrl,
-        'imageUrls': [imageUrl],
+        'imageUrl': imageUrls.first,
+        'imageUrls': imageUrls,
         'latitude': latitude,
         'longitude': longitude,
-        if (address != null) 'address': address,
+        if (resolved != null) 'address': resolved,
       });
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         final Map<String, dynamic> data = jsonDecode(response.body);
-        
-        // Ensure standard fields map back correctly
-        final formatted = {
+        // The create endpoint returns the raw Mongoose document, so the id and
+        // owner arrive under their camelCase names rather than the wire format.
+        return Issue.fromJson({
           ...data,
           'id': data['_id'] ?? data['id'],
           'user_id': data['userId'] ?? data['user_id'],
-        };
-        return Issue.fromJson(formatted);
-      } else {
-        throw Exception('Failed to create issue: ${response.body}');
+        });
       }
+      throw Exception(
+        _apiClient.errorMessage(response, 'Server rejected the complaint'),
+      );
     } catch (e) {
       debugPrint('Create issue error: $e');
       rethrow;
@@ -114,7 +121,9 @@ class IssueService {
       });
 
       if (response.statusCode != 200) {
-        throw Exception('Failed to update issue status: ${response.body}');
+        throw Exception(
+          _apiClient.errorMessage(response, 'Could not update the status'),
+        );
       }
     } catch (e) {
       debugPrint('Update issue status error: $e');
@@ -176,8 +185,7 @@ class IssueService {
           'disagree_count': data['disagreeCount'],
         };
       } else {
-        final errorData = jsonDecode(response.body);
-        throw Exception(errorData['message'] ?? 'Voting failed');
+        throw Exception(_apiClient.errorMessage(response, 'Vote did not register'));
       }
     } catch (e) {
       debugPrint('Vote on issue error: $e');

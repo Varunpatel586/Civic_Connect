@@ -36,17 +36,33 @@ class LocationService {
     return permission;
   }
 
-  // Get current position
+  /// How long to wait for a fix before giving up.
+  ///
+  /// Without a bound this can wait forever — a browser permission prompt nobody
+  /// answers, or a device indoors with no signal — and every caller that awaits
+  /// it hangs with it.
+  static const Duration fixTimeout = Duration(seconds: 12);
+
+  /// Resolves the device's position, or gives up.
+  ///
+  /// The timeout wraps the permission request as well as the fix. A browser
+  /// permission prompt nobody answers never returns, so bounding only the fix
+  /// leaves the caller hanging at the step before it.
   Future<Position> getCurrentPosition() async {
     try {
-      await checkAndRequestPermission();
-      return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      return await _resolvePosition().timeout(fixTimeout);
     } catch (e) {
       debugPrint('Error getting current position: $e');
       rethrow;
     }
+  }
+
+  Future<Position> _resolvePosition() async {
+    await checkAndRequestPermission();
+    return Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+      timeLimit: fixTimeout,
+    );
   }
 
   // Get address from coordinates
