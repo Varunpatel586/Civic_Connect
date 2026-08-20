@@ -1,292 +1,445 @@
-import 'dart:async';
-import 'dart:io';
-
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 
+import '../services/location_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_typography.dart';
 import 'issue_submission_screen.dart';
 
+/// Captures the photograph that opens a complaint.
+///
+/// Location is gathered in parallel with the preview warming up, because the
+/// GPS fix usually takes longer than the citizen does to frame a pothole. It is
+/// deliberately non-fatal here: [IssueSubmissionScreen] retries and blocks
+/// filing if it still cannot get one.
 class CameraScreen extends StatefulWidget {
-  const CameraScreen({Key? key}) : super(key: key);
+  const CameraScreen({super.key});
 
   @override
-  _CameraScreenState createState() => _CameraScreenState();
+  State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> {
+class _CameraScreenState extends State<CameraScreen>
+    with WidgetsBindingObserver {
+  final LocationService _locationService = LocationService();
+
   CameraController? _controller;
-  List<CameraDescription>? _cameras;
-  int _selectedCameraIndex = 0;
-  bool _isCameraInitialized = false;
-  bool _isRecording = false;
-  double _currentZoomLevel = 1.0;
-  double _minZoomLevel = 1.0;
-  double _maxZoomLevel = 1.0;
-  Position? _currentPosition;
+  List<CameraDescription> _cameras = const [];
+  int _cameraIndex = 0;
+
+  bool _isReady = false;
+  bool _isCapturing = false;
+  String? _fatalError;
+
+  double _zoom = 1;
+  double _minZoom = 1;
+  double _maxZoom = 1;
+
+  double? _latitude;
+  double? _longitude;
 
   @override
   void initState() {
     super.initState();
-    _initializeCamera();
-    _getCurrentLocation();
-  }
-
-  Future<void> _getCurrentLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    // Test if location services are enabled
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      return Future.error('Location services are disabled.');
-    }
-
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        return Future.error('Location permissions are denied');
-      }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      return Future.error(
-        'Location permissions are permanently denied, we cannot request permissions.',
-      );
-    }
-
-    // Get the current location
-    _currentPosition = await Geolocator.getCurrentPosition();
-  }
-
-  Future<void> _initializeCamera() async {
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) {
-      throw Exception('No cameras found');
-    }
-    _cameras = cameras;
-    _initializeCameraController(0);
-  }
-
-  Future<void> _initializeCameraController(int cameraIndex) async {
-    if (_cameras == null || _cameras!.isEmpty) return;
-
-    if (_controller != null) {
-      await _controller!.dispose();
-    }
-
-    _controller = CameraController(
-      _cameras![cameraIndex],
-      ResolutionPreset.high,
-      enableAudio: false,
-    );
-
-    _controller!.addListener(() {
-      if (mounted) setState(() {});
-    });
-
-    try {
-      await _controller!.initialize();
-      _minZoomLevel = await _controller!.getMinZoomLevel();
-      _maxZoomLevel = await _controller!.getMaxZoomLevel();
-      setState(() => _isCameraInitialized = true);
-    } catch (e) {
-      debugPrint('Error initializing camera: $e');
-    }
-  }
-
-  Future<void> _toggleCamera() async {
-    if (_cameras == null || _cameras!.length < 2) return;
-
-    setState(() => _isCameraInitialized = false);
-    _selectedCameraIndex = _selectedCameraIndex == 0 ? 1 : 0;
-    await _initializeCameraController(_selectedCameraIndex);
-  }
-
-  Future<void> _takePicture() async {
-    if (!_isCameraInitialized || _controller == null) return;
-
-    // Capture the BuildContext before any async operations
-    final BuildContext currentContext = this.context;
-
-    try {
-      final XFile picture = await _controller!.takePicture();
-
-      if (!mounted) return;
-
-      final File imageFile = File(picture.path);
-      if (!await imageFile.exists()) {
-        debugPrint('Error: Image file does not exist at ${picture.path}');
-        if (mounted) {
-          ScaffoldMessenger.of(currentContext).showSnackBar(
-            const SnackBar(content: Text('Error: Failed to capture image')),
-          );
-        }
-        return;
-      }
-
-      if (!mounted) return;
-
-      await Navigator.of(currentContext).push(
-        MaterialPageRoute(
-          builder: (BuildContext context) => IssueSubmissionScreen(
-            initialImage: imageFile,
-            latitude: _currentPosition?.latitude,
-            longitude: _currentPosition?.longitude,
-          ),
-        ),
-      );
-    } catch (e) {
-      debugPrint('Error in _takePicture: $e');
-      if (mounted) {
-        try {
-          ScaffoldMessenger.of(
-            currentContext,
-          ).showSnackBar(SnackBar(content: Text('Error taking picture: $e')));
-        } catch (_) {
-          // Ignore if context is no longer valid
-        }
-      }
-    }
-  }
-
-  void _updateZoom(double zoom) {
-    if (!_isCameraInitialized || _controller == null) return;
-
-    setState(() {
-      _currentZoomLevel = zoom;
-    });
-
-    _controller!.setZoomLevel(zoom);
+    WidgetsBinding.instance.addObserver(this);
+    _startCamera();
+    _startLocation();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
     super.dispose();
   }
 
+  /// Releases the camera when the app goes to the background and takes it back
+  /// on return. Without this, coming back from the app switcher leaves a frozen
+  /// preview — an easy way to lose a live demo.
   @override
-  Widget build(BuildContext context) {
-    if (!_isCameraInitialized) {
-      return Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 20),
-              Text(
-                'Initializing camera...',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              if (_controller != null && _controller!.value.hasError)
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text(
-                    'Error: ${_controller!.value.errorDescription}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                ),
-            ],
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+
+    if (state == AppLifecycleState.inactive) {
+      controller.dispose();
+      if (mounted) setState(() => _isReady = false);
+    } else if (state == AppLifecycleState.resumed) {
+      _openCamera(_cameraIndex);
+    }
+  }
+
+  Future<void> _startCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (!mounted) return;
+
+      if (cameras.isEmpty) {
+        setState(() => _fatalError = 'This device has no camera available.');
+        return;
+      }
+
+      _cameras = cameras;
+      await _openCamera(0);
+    } catch (e) {
+      if (!mounted) return;
+      setState(
+        () => _fatalError =
+            'Camera could not be opened. Check that Civic Connect has camera permission.',
+      );
+    }
+  }
+
+  Future<void> _openCamera(int index) async {
+    if (_cameras.isEmpty) return;
+
+    await _controller?.dispose();
+
+    final controller = CameraController(
+      _cameras[index],
+      ResolutionPreset.high,
+      enableAudio: false,
+    );
+    _controller = controller;
+
+    try {
+      await controller.initialize();
+      final minZoom = await controller.getMinZoomLevel();
+      final maxZoom = await controller.getMaxZoomLevel();
+
+      if (!mounted) return;
+      setState(() {
+        _cameraIndex = index;
+        _minZoom = minZoom;
+        _maxZoom = maxZoom;
+        _zoom = minZoom;
+        _isReady = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(
+        () => _fatalError =
+            'Camera could not start. Check that Civic Connect has camera permission.',
+      );
+    }
+  }
+
+  /// Best-effort. Errors are swallowed on purpose — a missing fix must not stop
+  /// the citizen taking the photograph.
+  Future<void> _startLocation() async {
+    try {
+      final position = await _locationService.getCurrentPosition();
+      if (!mounted) return;
+      setState(() {
+        _latitude = position.latitude;
+        _longitude = position.longitude;
+      });
+    } catch (e) {
+      debugPrint('CameraScreen: no location fix yet: $e');
+    }
+  }
+
+  Future<void> _flipCamera() async {
+    if (_cameras.length < 2) return;
+    setState(() => _isReady = false);
+    await _openCamera(_cameraIndex == 0 ? 1 : 0);
+  }
+
+  Future<void> _toggleFlash() async {
+    final controller = _controller;
+    if (controller == null || !_isReady) return;
+
+    final next = controller.value.flashMode == FlashMode.off
+        ? FlashMode.torch
+        : FlashMode.off;
+    await controller.setFlashMode(next);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _setZoom(double value) async {
+    final controller = _controller;
+    if (controller == null || !_isReady) return;
+    setState(() => _zoom = value);
+    await controller.setZoomLevel(value);
+  }
+
+  Future<void> _capture() async {
+    final controller = _controller;
+    if (controller == null || !_isReady || _isCapturing) return;
+
+    setState(() => _isCapturing = true);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      // takePicture returns an XFile, which works on every platform — there is
+      // no dart:io handle to wrap it in on web.
+      final shot = await controller.takePicture();
+
+      if (await shot.length() == 0) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('The photo could not be saved.')),
+        );
+        return;
+      }
+
+      await navigator.push(
+        MaterialPageRoute(
+          builder: (_) => IssueSubmissionScreen(
+            initialImage: shot,
+            latitude: _latitude,
+            longitude: _longitude,
           ),
         ),
       );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not take the photo: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isCapturing = false);
     }
+  }
 
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Positioned.fill(child: CameraPreview(_controller!)),
-          Positioned(
-            top: 40,
-            left: 20,
-            child: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white, size: 32),
-              onPressed: () => Navigator.pop(context),
+      body: _fatalError != null
+          ? _CameraError(message: _fatalError!)
+          : !_isReady
+          ? const _CameraWarmup()
+          : _buildPreview(),
+    );
+  }
+
+  Widget _buildPreview() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        CameraPreview(_controller!),
+        const _TopScrim(),
+        Positioned(
+          top: 8,
+          left: 4,
+          right: 8,
+          child: SafeArea(
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 26),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                const Spacer(),
+                _LocationPill(hasFix: _latitude != null),
+              ],
             ),
           ),
-          Positioned(
-            bottom: 40,
-            left: 0,
-            right: 0,
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: SafeArea(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // Zoom Slider
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 40.0),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.zoom_out, color: Colors.white),
-                      Expanded(
-                        child: Slider(
-                          value: _currentZoomLevel,
-                          min: _minZoomLevel,
-                          max: _maxZoomLevel,
-                          onChanged: _updateZoom,
-                          activeColor: Colors.white,
-                          inactiveColor: Colors.white54,
-                        ),
-                      ),
-                      const Icon(Icons.zoom_in, color: Colors.white),
-                    ],
+                if (_maxZoom > _minZoom)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 34),
+                    child: Slider(
+                      value: _zoom.clamp(_minZoom, _maxZoom),
+                      min: _minZoom,
+                      max: _maxZoom,
+                      activeColor: Colors.white,
+                      inactiveColor: Colors.white24,
+                      onChanged: _setZoom,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                // Camera Controls
+                const SizedBox(height: 8),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     IconButton(
-                      icon: const Icon(
-                        Icons.flash_on,
-                        color: Colors.white,
-                        size: 32,
+                      iconSize: 28,
+                      color: Colors.white,
+                      icon: Icon(
+                        _controller?.value.flashMode == FlashMode.torch
+                            ? Icons.flash_on
+                            : Icons.flash_off,
                       ),
-                      onPressed: () {
-                        // Toggle flash
-                        _controller!.setFlashMode(
-                          _controller!.value.flashMode == FlashMode.off
-                              ? FlashMode.torch
-                              : FlashMode.off,
-                        );
-                      },
+                      onPressed: _toggleFlash,
                     ),
-                    GestureDetector(
-                      onTap: _takePicture,
-                      child: Container(
-                        width: 70,
-                        height: 70,
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                        ),
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ),
+                    _ShutterButton(
+                      isCapturing: _isCapturing,
+                      onTap: _capture,
                     ),
                     IconButton(
-                      icon: const Icon(
-                        Icons.cameraswitch,
-                        color: Colors.white,
-                        size: 32,
-                      ),
-                      onPressed: _toggleCamera,
+                      iconSize: 28,
+                      color: _cameras.length > 1 ? Colors.white : Colors.white38,
+                      icon: const Icon(Icons.cameraswitch_outlined),
+                      onPressed: _cameras.length > 1 ? _flipCamera : null,
                     ),
                   ],
                 ),
+                const SizedBox(height: 20),
               ],
             ),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Keeps the white controls legible over a bright sky.
+class _TopScrim extends StatelessWidget {
+  const _TopScrim();
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: Container(
+        height: 130,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.black.withValues(alpha: 0.45), Colors.transparent],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tells the citizen up front whether this photo will carry coordinates.
+class _LocationPill extends StatelessWidget {
+  final bool hasFix;
+
+  const _LocationPill({required this.hasFix});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            hasFix ? Icons.my_location : Icons.location_searching,
+            size: 12,
+            color: hasFix ? Colors.white : AppColors.amber700,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            hasFix ? 'LOCATION READY' : 'FINDING LOCATION',
+            style: AppTypography.badge(
+              color: hasFix ? Colors.white : AppColors.amber700,
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _ShutterButton extends StatelessWidget {
+  final bool isCapturing;
+  final VoidCallback onTap;
+
+  const _ShutterButton({required this.isCapturing, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: isCapturing ? null : onTap,
+      child: Container(
+        width: 68,
+        height: 68,
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isCapturing ? Colors.white54 : Colors.white,
+            shape: BoxShape.circle,
+          ),
+          child: isCapturing
+              ? const Padding(
+                  padding: EdgeInsets.all(18),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.navy900,
+                  ),
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+class _CameraWarmup extends StatelessWidget {
+  const _CameraWarmup();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircularProgressIndicator(color: Colors.white),
+          SizedBox(height: 16),
+          Text('Starting camera…', style: TextStyle(color: Colors.white70)),
+        ],
+      ),
+    );
+  }
+}
+
+class _CameraError extends StatelessWidget {
+  final String message;
+
+  const _CameraError({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.no_photography_outlined,
+              size: 42,
+              color: Colors.white38,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white, fontSize: 15),
+            ),
+            const SizedBox(height: 22),
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white38),
+              ),
+              child: const Text('Go back'),
+            ),
+          ],
+        ),
       ),
     );
   }

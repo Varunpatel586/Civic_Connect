@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -7,9 +8,18 @@ import 'package:url_launcher/url_launcher_string.dart';
 
 import '../models/models.dart';
 import '../providers/app_provider.dart';
-import '../widgets/comment_tile.dart';
 import '../services/api_client.dart';
+import '../services/issue_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_typography.dart';
+import '../utils/complaint_reference.dart';
+import '../utils/issue_categories.dart';
+import '../utils/sla.dart';
+import '../widgets/comment_tile.dart';
+import '../widgets/status_chip.dart';
 
+/// A single complaint, in full: the evidence, where it stands, what has
+/// happened to it, and the discussion under it.
 class IssueDetailScreen extends StatefulWidget {
   final String issueId;
 
@@ -21,97 +31,81 @@ class IssueDetailScreen extends StatefulWidget {
 
 class _IssueDetailScreenState extends State<IssueDetailScreen> {
   final _commentController = TextEditingController();
-  final _scrollController = ScrollController();
+  final _issueService = IssueService();
+
+  Issue? _issue;
   bool _isLoading = true;
   bool _isSubmitting = false;
-  Issue? _issue;
-  List<Comment> _comments = [];
-  late AppProvider _appProvider;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _appProvider = context.read<AppProvider>();
-    _loadIssue();
-    
-    // Add a post-frame callback to load comments after the first build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadComments();
-    });
+    _load();
   }
 
   @override
   void dispose() {
     _commentController.dispose();
-    _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadIssue() async {
-    setState(() => _isLoading = true);
+  /// Always refetches rather than reading the provider's cached copy: this
+  /// screen shows the status history, which list endpoints do not return.
+  Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
     try {
-      final appProvider = context.read<AppProvider>();
+      final issue = await _issueService.getIssueById(widget.issueId);
+      if (!mounted) return;
 
-      // Try to find the issue in the provider first
-      _issue = appProvider.nearbyIssues.firstWhere(
-        (issue) => issue.id == widget.issueId,
-        orElse: () => appProvider.userIssues.firstWhere(
-          (issue) => issue.id == widget.issueId,
-          orElse: () => Issue(
-            id: widget.issueId,
-            userId: '',
-            title: 'Loading...',
-            description: '',
-            imageUrl: '',
-            latitude: 0,
-            longitude: 0,
-            timestamp: DateTime.now(),
-            status: 'Pending',
-            createdAt: DateTime.now(),
-          ),
-        ),
-      );
-
-      // If issue not found in provider, fetch it from the server
-      if (_issue?.title == 'Loading...') {
-        _issue = await appProvider.getIssueById(widget.issueId);
+      if (issue == null) {
+        setState(() {
+          _error = 'This complaint could not be found.';
+          _isLoading = false;
+        });
+        return;
       }
+
+      await context.read<AppProvider>().loadCommentsForIssue(widget.issueId);
+      if (!mounted) return;
+      setState(() {
+        _issue = issue;
+        _isLoading = false;
+      });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to load issue details'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not load this complaint.';
+        _isLoading = false;
+      });
     }
   }
 
-  Future<void> _loadComments() async {
-    if (!mounted) return;
-    
+  Future<void> _vote(bool isAgree) async {
+    final appProvider = context.read<AppProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+
+    if (!appProvider.isAuthenticated) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Sign in to vote on complaints.')),
+      );
+      return;
+    }
+
     try {
-      await _appProvider.loadCommentsForIssue(widget.issueId);
-      if (mounted) {
-        setState(() {
-          _comments = _appProvider.getCommentsForIssue(widget.issueId);
-        });
-      }
+      await appProvider.voteOnIssue(widget.issueId, isAgree);
+      await _load();
     } catch (e) {
-      debugPrint('Error loading comments: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to load comments: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Vote did not go through. Try again.'),
+          backgroundColor: StatusColors.rejected.foreground,
+        ),
+      );
     }
   }
 
@@ -119,532 +113,625 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
     final content = _commentController.text.trim();
     if (content.isEmpty) return;
 
-    if (!mounted) return;
-    
     setState(() => _isSubmitting = true);
-    
+    final appProvider = context.read<AppProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+
     try {
-      await _appProvider.addComment(widget.issueId, content);
-      
+      await appProvider.addComment(widget.issueId, content);
       _commentController.clear();
-      
-      // Scroll to bottom to show the new comment
-      if (_scrollController.hasClients) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        });
-      }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to post comment: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Comment did not post. Try again.'),
+          backgroundColor: StatusColors.rejected.foreground,
+        ),
+      );
     } finally {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-      }
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
-  void _shareIssue() {
-    if (_issue == null) return;
+  void _share() {
+    final issue = _issue;
+    if (issue == null) return;
 
-    final text = 'Check out this issue on Civic Connect: ${_issue!.title}';
-    final url = 'https://yourapp.com/issues/${_issue!.id}';
-
-    Share.share('$text\n$url');
+    Share.share(
+      '${issue.title}\n'
+      'Complaint ${ComplaintReference.format(issue)} — ${issue.status}\n'
+      'Reported via Civic Connect',
+    );
   }
 
-  void _openInMaps() async {
-    if (_issue == null) return;
+  Future<void> _openInMaps() async {
+    final issue = _issue;
+    if (issue == null) return;
 
     final url =
-        'https://www.google.com/maps/search/?api=1&query=${_issue!.latitude},${_issue!.longitude}';
+        'https://www.google.com/maps/search/?api=1&query=${issue.latitude},${issue.longitude}';
+    final messenger = ScaffoldMessenger.of(context);
 
     if (await canLaunchUrlString(url)) {
-      await launchUrlString(url);
+      await launchUrlString(url, mode: LaunchMode.externalApplication);
     } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not open maps'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      messenger.showSnackBar(
+        const SnackBar(content: Text('No maps app available to open this.')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final appProvider = context.watch<AppProvider>();
-    
-    // Listen to comments changes
-    _comments = appProvider.getCommentsForIssue(widget.issueId);
+    final comments = context.select<AppProvider, List<Comment>>(
+      (p) => p.getCommentsForIssue(widget.issueId),
+    );
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Issue Details'),
+        title: const Text('Complaint'),
         actions: [
-          IconButton(icon: const Icon(Icons.share), onPressed: _shareIssue),
-          if (appProvider.isAdmin) ...[
-            const SizedBox(width: 8),
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'resolve' && _issue != null) {
-                  _updateIssueStatus('Resolved');
-                } else if (value == 'reject' && _issue != null) {
-                  _updateIssueStatus('Rejected');
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'resolve',
-                  child: Text('Mark as Resolved'),
-                ),
-                const PopupMenuItem(
-                  value: 'reject',
-                  child: Text('Reject Issue'),
-                ),
-              ],
+          if (_issue != null)
+            IconButton(
+              icon: const Icon(Icons.ios_share),
+              tooltip: 'Share',
+              onPressed: _share,
+            ),
+        ],
+      ),
+      body: _buildBody(comments),
+      bottomNavigationBar: _issue == null
+          ? null
+          : _CommentComposer(
+              controller: _commentController,
+              isSubmitting: _isSubmitting,
+              onSubmit: _submitComment,
+            ),
+    );
+  }
+
+  Widget _buildBody(List<Comment> comments) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.error_outline,
+                size: 38,
+                color: AppColors.slate200,
+              ),
+              const SizedBox(height: 12),
+              Text(_error!, style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 16),
+              OutlinedButton(
+                onPressed: _load,
+                child: const Text('Try again'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final issue = _issue!;
+    final sla = SlaPolicy.evaluate(issue);
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          _Evidence(issue: issue),
+          _Summary(issue: issue, sla: sla),
+          _LocationRow(issue: issue, onOpenMaps: _openInMaps),
+          _VoteBar(issue: issue, onVote: _vote),
+          if (issue.statusHistory.isNotEmpty) _Timeline(issue: issue),
+          _CommentSection(comments: comments),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _Evidence extends StatelessWidget {
+  final Issue issue;
+
+  const _Evidence({required this.issue});
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 4 / 3,
+      child: CachedNetworkImage(
+        imageUrl: ApiClient().normalizeUrl(issue.imageUrl),
+        fit: BoxFit.cover,
+        placeholder: (context, url) => Container(
+          color: AppColors.canvas,
+          child: const Center(child: CircularProgressIndicator()),
+        ),
+        errorWidget: (context, url, error) => Container(
+          color: AppColors.canvas,
+          child: const Icon(
+            Icons.image_not_supported_outlined,
+            color: AppColors.slate200,
+            size: 34,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Category, title, reference, deadline, description.
+class _Summary extends StatelessWidget {
+  final Issue issue;
+  final Sla sla;
+
+  const _Summary({required this.issue, required this.sla});
+
+  @override
+  Widget build(BuildContext context) {
+    final category = IssueCategories.byValue(issue.category);
+
+    return Container(
+      color: AppColors.surface,
+      padding: const EdgeInsets.fromLTRB(16, 15, 16, 15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(category.icon, size: 14, color: AppColors.slate600),
+              const SizedBox(width: 5),
+              Text(
+                category.label.toUpperCase(),
+                style: AppTypography.badge(color: AppColors.slate600),
+              ),
+              const Spacer(),
+              StatusChip(status: issue.status, overdue: sla.isOverdue),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(issue.title, style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                ComplaintReference.format(issue),
+                style: AppTypography.recordId(),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'filed ${timeago.format(issue.createdAt)}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
+              ),
+            ],
+          ),
+          if (!sla.isClosed) ...[
+            const SizedBox(height: 10),
+            SlaLabel(sla: sla),
+          ],
+          if (issue.description?.trim().isNotEmpty ?? false) ...[
+            const SizedBox(height: 13),
+            Text(
+              issue.description!.trim(),
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
           ],
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _issue == null
-          ? const Center(child: Text('Issue not found'))
-          : Column(
-              children: [
-                // Issue Content
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Issue Image
-                        AspectRatio(
-                          aspectRatio: 16 / 9,
-                          child: CachedNetworkImage(
-                            imageUrl: ApiClient().normalizeUrl(_issue!.imageUrl),
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => Container(
-                              color: Colors.grey[200],
-                              child: const Center(
-                                child: CircularProgressIndicator(),
-                              ),
-                            ),
-                            errorWidget: (context, url, error) => Container(
-                              color: Colors.grey[200],
-                              child: const Icon(Icons.error),
-                            ),
-                          ),
-                        ),
-
-                        // Issue Details
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Title and Status
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      _issue!.title,
-                                      style: theme.textTheme.headlineSmall
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                    ),
-                                  ),
-                                  _buildStatusChip(theme, _issue!.status),
-                                ],
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Description
-                              if (_issue!.description?.isNotEmpty ?? false) ...[
-                                Text(
-                                  _issue!.description!,
-                                  style: theme.textTheme.bodyLarge,
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-
-                              // Location and Time
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.location_on_outlined,
-                                    size: 20,
-                                    color: theme.hintColor,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: GestureDetector(
-                                      onTap: _openInMaps,
-                                      child: Text(
-                                        _issue!.address ?? 'Unknown location',
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                              color: theme.primaryColor,
-                                              decoration:
-                                                  TextDecoration.underline,
-                                            ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-
-                              const SizedBox(height: 8),
-
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.access_time,
-                                    size: 20,
-                                    color: theme.hintColor,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Reported ${timeago.format(_issue!.timestamp)}',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme.hintColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
-
-                              const SizedBox(height: 24),
-
-                              // Votes
-                              _buildVotingSection(theme, appProvider),
-
-                              const SizedBox(height: 24),
-                              const Divider(),
-                              const SizedBox(height: 8),
-
-                              // Comments Header
-                              Row(
-                                children: [
-                                  Text(
-                                    'Comments',
-                                    style: theme.textTheme.titleMedium
-                                        ?.copyWith(fontWeight: FontWeight.bold),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: theme.primaryColor.withOpacity(
-                                        0.1,
-                                      ),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Text(
-                                      _comments.length.toString(),
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(
-                                            color: theme.primaryColor,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        // Comments List
-                        if (_comments.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 32),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.comment_outlined,
-                                  size: 48,
-                                  color: theme.hintColor.withOpacity(0.5),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'No comments yet',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.hintColor,
-                                  ),
-                                ),
-                                const Text('Be the first to comment!'),
-                              ],
-                            ),
-                          )
-                        else
-                          ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _comments.length,
-                            itemBuilder: (context, index) {
-                              return CommentTile(comment: _comments[index]);
-                            },
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Comment Input
-                if (appProvider.isAuthenticated)
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: theme.cardColor,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 4,
-                          offset: const Offset(0, -2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _commentController,
-                            decoration: InputDecoration(
-                              hintText: 'Add a comment...',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(24),
-                                borderSide: BorderSide.none,
-                              ),
-                              filled: true,
-                              fillColor: theme.inputDecorationTheme.fillColor,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                            ),
-                            maxLines: null,
-                            textInputAction: TextInputAction.send,
-                            onSubmitted: (_) => _submitComment(),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        if (_isSubmitting)
-                          const CircularProgressIndicator()
-                        else
-                          IconButton(
-                            icon: const Icon(Icons.send),
-                            onPressed: _submitComment,
-                            color: theme.primaryColor,
-                          ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
     );
   }
+}
 
-  Widget _buildVotingSection(ThemeData theme, AppProvider appProvider) {
-    // Get the current user's vote for this issue
-    final userVote = _issue?.userVote;
+class _LocationRow extends StatelessWidget {
+  final Issue issue;
+  final VoidCallback onOpenMaps;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Is this issue still relevant?',
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.bold,
+  const _LocationRow({required this.issue, required this.onOpenMaps});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.surface,
+      margin: const EdgeInsets.only(top: 1),
+      child: InkWell(
+        onTap: onOpenMaps,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 13, 12, 13),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.place_outlined,
+                size: 18,
+                color: AppColors.navy700,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      issue.address?.trim().isNotEmpty ?? false
+                          ? issue.address!
+                          : 'Address not recorded',
+                      style: Theme.of(context).textTheme.bodySmall,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${issue.latitude.toStringAsFixed(5)}, '
+                      '${issue.longitude.toStringAsFixed(5)}',
+                      style: AppTypography.recordId().copyWith(fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.open_in_new,
+                size: 16,
+                color: AppColors.slate600,
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => _handleVote(appProvider, true),
-                icon: Icon(
-                  Icons.thumb_up,
-                  color: userVote == 'agree'
-                      ? theme.primaryColor
-                      : theme.hintColor,
-                ),
-                label: Text(
-                  'Agree (${_issue?.agreeCount ?? 0})',
-                  style: TextStyle(
-                    color: userVote == 'agree'
-                        ? theme.primaryColor
-                        : theme.hintColor,
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(
-                    color: userVote == 'agree'
-                        ? theme.primaryColor
-                        : theme.dividerColor,
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => _handleVote(appProvider, false),
-                icon: Icon(
-                  Icons.thumb_down,
-                  color: userVote == 'disagree' ? Colors.red : theme.hintColor,
-                ),
-                label: Text(
-                  'Disagree (${_issue?.disagreeCount ?? 0})',
-                  style: TextStyle(
-                    color: userVote == 'disagree'
-                        ? Colors.red
-                        : theme.hintColor,
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(
-                    color: userVote == 'disagree'
-                        ? Colors.red
-                        : theme.dividerColor,
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
+      ),
     );
   }
+}
 
-  Widget _buildStatusChip(ThemeData theme, String status) {
-    Color statusColor;
-    switch (status.toLowerCase()) {
-      case 'resolved':
-        statusColor = Colors.green;
-        break;
-      case 'in progress':
-        statusColor = Colors.orange;
-        break;
-      case 'rejected':
-        statusColor = Colors.red;
-        break;
-      default: // pending
-        statusColor = Colors.blue;
-    }
+/// Community validation: does the neighbourhood agree this is real?
+class _VoteBar extends StatelessWidget {
+  final Issue issue;
+  final ValueChanged<bool> onVote;
+
+  const _VoteBar({required this.issue, required this.onVote});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = issue.agreeCount + issue.disagreeCount;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: statusColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: statusColor.withOpacity(0.3)),
+      color: AppColors.surface,
+      margin: const EdgeInsets.only(top: 1),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('COMMUNITY CHECK', style: AppTypography.sectionLabel()),
+              const Spacer(),
+              Text(
+                total == 1 ? '1 response' : '$total responses',
+                style: AppTypography.inlineCount(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 11),
+          Row(
+            children: [
+              Expanded(
+                child: _VoteButton(
+                  label: 'Agree',
+                  count: issue.agreeCount,
+                  icon: issue.userVote == 'agree'
+                      ? Icons.thumb_up
+                      : Icons.thumb_up_outlined,
+                  active: issue.userVote == 'agree',
+                  activeColor: StatusColors.resolved.foreground,
+                  onTap: () => onVote(true),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _VoteButton(
+                  label: 'Disagree',
+                  count: issue.disagreeCount,
+                  icon: issue.userVote == 'disagree'
+                      ? Icons.thumb_down
+                      : Icons.thumb_down_outlined,
+                  active: issue.userVote == 'disagree',
+                  activeColor: StatusColors.rejected.foreground,
+                  onTap: () => onVote(false),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
-      child: Text(
-        status.toUpperCase(),
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: statusColor,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.5,
+    );
+  }
+}
+
+class _VoteButton extends StatelessWidget {
+  final String label;
+  final int count;
+  final IconData icon;
+  final bool active;
+  final Color activeColor;
+  final VoidCallback onTap;
+
+  const _VoteButton({
+    required this.label,
+    required this.count,
+    required this.icon,
+    required this.active,
+    required this.activeColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? activeColor : AppColors.slate600;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(3),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        decoration: BoxDecoration(
+          color: active ? activeColor.withValues(alpha: 0.06) : null,
+          border: Border.all(
+            color: active ? activeColor : AppColors.slate200,
+          ),
+          borderRadius: BorderRadius.circular(3),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 7),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: color,
+                fontSize: 12.5,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text('$count', style: AppTypography.inlineCount(color: color)),
+          ],
         ),
       ),
     );
   }
+}
 
-  Future<void> _handleVote(AppProvider appProvider, bool isAgree) async {
-    if (!appProvider.isAuthenticated) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please sign in to vote'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-      return;
-    }
+/// Everything that has happened to this complaint, oldest first.
+///
+/// Read straight from the recorded history rather than inferred from the
+/// current status, so it shows what the municipality actually did and when.
+class _Timeline extends StatelessWidget {
+  final Issue issue;
 
-    try {
-      setState(() => _isLoading = true);
-      await appProvider.voteOnIssue(widget.issueId, isAgree);
+  const _Timeline({required this.issue});
 
-      // Refresh the issue data
-      await _loadIssue();
+  @override
+  Widget build(BuildContext context) {
+    final format = DateFormat('d MMM, HH:mm');
+    final events = issue.statusHistory;
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Your vote has been recorded!'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to submit vote. Please try again.'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
+    return Container(
+      color: AppColors.surface,
+      margin: const EdgeInsets.only(top: 1),
+      padding: const EdgeInsets.fromLTRB(16, 15, 16, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('CASE HISTORY', style: AppTypography.sectionLabel()),
+          const SizedBox(height: 13),
+          for (var i = 0; i < events.length; i++)
+            _TimelineEntry(
+              event: events[i],
+              formatted: format.format(events[i].changedAt.toLocal()),
+              isLatest: i == events.length - 1,
+              isLast: i == events.length - 1,
+            ),
+        ],
+      ),
+    );
   }
+}
 
-  Future<void> _updateIssueStatus(String status) async {
-    try {
-      final appProvider = context.read<AppProvider>();
-      await appProvider.updateIssueStatus(
-        issueId: widget.issueId,
-        status: status,
-      );
+class _TimelineEntry extends StatelessWidget {
+  final StatusEvent event;
+  final String formatted;
+  final bool isLatest;
+  final bool isLast;
 
-      if (mounted) {
-        await _loadIssue(); // Refresh the issue to update the status
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Issue marked as $status'),
-            backgroundColor: Colors.green,
+  const _TimelineEntry({
+    required this.event,
+    required this.formatted,
+    required this.isLatest,
+    required this.isLast,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = StatusColors.forStatus(event.status);
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Rail: a filled node for the current state, hollow for past ones.
+          Column(
+            children: [
+              Container(
+                width: 11,
+                height: 11,
+                margin: const EdgeInsets.only(top: 3),
+                decoration: BoxDecoration(
+                  color: isLatest ? palette.foreground : AppColors.surface,
+                  border: Border.all(color: palette.foreground, width: 2),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              if (!isLast)
+                Expanded(
+                  child: Container(width: 2, color: AppColors.slate100),
+                ),
+            ],
           ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to update issue status'),
-            backgroundColor: Colors.red,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 12 : 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        event.status,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: palette.foreground,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        formatted,
+                        style: AppTypography.recordId().copyWith(fontSize: 10),
+                      ),
+                    ],
+                  ),
+                  if (event.note.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      event.note,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(fontSize: 11.5),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
-        );
-      }
-    }
+        ],
+      ),
+    );
+  }
+}
+
+class _CommentSection extends StatelessWidget {
+  final List<Comment> comments;
+
+  const _CommentSection({required this.comments});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.surface,
+      margin: const EdgeInsets.only(top: 1),
+      padding: const EdgeInsets.only(top: 15, bottom: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Text('DISCUSSION', style: AppTypography.sectionLabel()),
+                const Spacer(),
+                Text(
+                  '${comments.length}',
+                  style: AppTypography.inlineCount(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (comments.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+              child: Text(
+                'No comments yet. Add what you know about this issue.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            )
+          else
+            ...comments.map((comment) => CommentTile(comment: comment)),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommentComposer extends StatelessWidget {
+  final TextEditingController controller;
+  final bool isSubmitting;
+  final VoidCallback onSubmit;
+
+  const _CommentComposer({
+    required this.controller,
+    required this.isSubmitting,
+    required this.onSubmit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.slate200)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  textCapitalization: TextCapitalization.sentences,
+                  minLines: 1,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    hintText: 'Add to the discussion',
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 11,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 46,
+                height: 46,
+                child: ElevatedButton(
+                  onPressed: isSubmitting ? null : onSubmit,
+                  style: ElevatedButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(46, 46),
+                  ),
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.send, size: 18),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
