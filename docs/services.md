@@ -34,7 +34,7 @@ Located in [issue_service.dart](../lib/services/issue_service.dart). Interacts w
 ### Key API
 - **`getNearbyIssues({required double latitude, required double longitude, double radiusKm = 5.0, int limit = 50})`**: Queries `GET /issues/nearby`. Resolves nearby reports based on coordinate distance.
 - **`getIssueById(String issueId)`**: Queries `GET /issues/:id`.
-- **`createIssue({required String title, required String? description, required String imageUrl, required double latitude, required double longitude})`**: Translates coordinates to address via Geocoding, determines category keywords from title, and calls `POST /issues` on the backend.
+- **`createIssue({required String category, required String description, required List<String> imageUrls, required double latitude, required double longitude, String? address, String? title})`**: Resolves address from coordinates via Geocoding if needed, and posts to `POST /issues`. The backend evaluates if the category matches active complaints within a 15-meter radius and triggers the visual similarity engine.
 - **`updateIssueStatus({required String issueId, required String status})`**: Performs `PATCH /issues/:id/status`.
 - **`voteOnIssue({required String issueId, required String userId, required bool isAgree})`**: Performs `POST /issues/:id/vote` with JSON payload `{"isAgree": bool}`. The backend recalculates aggregate counts.
 - **`getUserIssues(String userId)`**: Performs `GET /issues/user`.
@@ -75,4 +75,13 @@ Located in [admin_service.dart](../lib/services/admin_service.dart). Handles mun
 ## 7. DeepLinkService
 Located in [deep_link_service.dart](../lib/services/deep_link_service.dart). Captures incoming URL streams, extracts token parameters, and updates `ApiClient` accordingly.
 - **`_handleDeepLink(Uri uri)`**: Parses query parameters: `uri.queryParameters['token']`.
+
+---
+
+## 8. AI Vision Clustering Service (Microservice)
+Located in the `ai_service/` directory and hosted as a Python FastAPI service. Integrated via Express backend endpoints to verify visual duplicate uploads:
+* **Endpoint**: `POST /api/v1/compare`
+* **Input**: Target image path, list of candidate issues and their image paths, and a similarity threshold (default: `0.82`).
+* **Processing**: Generates normalised 512-dimensional vector embeddings using the lightweight vision transformer `clip-ViT-B-32` and measures Cosine Similarity between the target image and all candidates.
+* **Output**: Returns the highest matching `issue_id`, its similarity score, and a boolean `is_duplicate`.
 

@@ -28,12 +28,15 @@ erDiagram
         string description
         string imageUrl
         string-array imageUrls
+        ObjectId-array reporters "Ref: users"
+        int reportCount
         double latitude
         double longitude
         string address
         string status "Pending | In Progress..."
         int agreeCount
         int disagreeCount
+        date slaDeadline
         date createdAt
         date updatedAt
     }
@@ -84,18 +87,22 @@ Maps authentication profiles. Exposes user access roles.
 
 ### 2. `issues` collection
 Represents municipal complaints reported by users.
-- `userId` (ObjectId, Reference: `'User'`, Required)
+- `userId` (ObjectId, Reference: `'User'`, Required - represents the primary filer)
 - `title` (String, Required, Trimmed)
-- `category` (String, Required, Enum: `['pothole', 'street_light', 'water', 'electricity', 'garbage', 'road', 'drainage', 'other']`)
+- `category` (String, Required, Enum: `['pothole', 'street_light', 'water', 'electricity', 'garbage', 'road', 'drainage', 'other', 'Potholes & Road Damage', 'Garbage Pile-ups', 'Broken Street Lights']`)
 - `description` (String, Default: `''`)
 - `imageUrl` (String, Required, holds link to main picture)
 - `imageUrls` (Array of Strings, holds all supporting photo paths)
+- `reporters` (Array of ObjectIds, Reference: `'User'`, Required - tracks all users who reported this issue)
+- `reportCount` (Number, Default: `1` - increments on deduplication merges)
 - `latitude` (Number, Required)
 - `longitude` (Number, Required)
+- `location` (GeoJSON Point: `{ type: String, coordinates: [Number] }`, Required - coordinates format [longitude, latitude])
 - `address` (String, Default: `''`, resolved via geocoding)
 - `status` (String, Enum: `['Pending', 'In Progress', 'Resolved', 'Rejected']`, Default: `'Pending'`)
 - `agreeCount` (Number, Default: `0`, automatically synchronized on vote cast)
 - `disagreeCount` (Number, Default: `0`)
+- `slaDeadline` (Date, holds computed SLA due date deadline)
 - `createdAt` (Date, Default: `Date.now`)
 - `updatedAt` (Date, Default: `Date.now`)
 
@@ -130,7 +137,9 @@ MongoDB collections are indexed to ensure queries are highly performant:
    - `{ email: 1 }` (Unique) - Prevents register collisions on duplicate email.
    - `{ username: 1 }` (Unique) - Prevents register collisions on duplicate username.
 2. **`issues` indexes**:
-   - `{ latitude: 1, longitude: 1 }` (Geospatial lookup) - Essential for coordinate calculations in nearby proximity queries.
+   - `{ location: "2dsphere" }` (Geospatial lookup) - Essential for coordinate-based radius queries (15-meter deduplication check) and center-sphere nearby feeds.
+   - `{ category: 1, status: 1 }` - Optimizes duplicate searches filtering candidates by category and status.
+   - `{ status: 1, createdAt: -1 }` - Speeds up sorted dashboard queues and status lists.
 3. **`votes` indexes**:
    - `{ issueId: 1, userId: 1 }` (Unique) - Enforces that a profile can cast at most **one** Agree/Disagree vote per reported issue.
 4. **`upvotes` indexes**:

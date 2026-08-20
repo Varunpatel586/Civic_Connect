@@ -5,7 +5,7 @@ This document provides setup instructions, environment variables configuration, 
 ---
 
 ## Prerequisites
-Before running the application, verify your development environment matches the exact toolchain versions detailed in [ENVIRONMENT_VERSIONS.md](../../../ENVIRONMENT_VERSIONS.md).
+Before running the application, verify your development environment matches the exact toolchain versions detailed in [ENVIRONMENT_VERSIONS.md](../ENVIRONMENT_VERSIONS.md).
 
 Key requirements:
 * **Flutter SDK**: `3.35.3` (Stable)
@@ -33,6 +33,7 @@ PORT=5000
 MONGO_URI=mongodb://localhost:27017/civic_connect
 JWT_SECRET=super_secret_jwt_key_civic_connect_123
 API_URL=http://localhost:5000
+AI_SERVICE_URL=http://localhost:8000
 ```
 
 > [!IMPORTANT]
@@ -51,26 +52,28 @@ flutter:
 
 ---
 
-## 2. Running the Backend Server (`/server`)
+## 2. Running the Backend Server & AI Service (`/server`)
 
 The backend server resolves `.env` dynamically from the parent workspace root folder.
 
-Execute the following commands in the `/server` directory:
+To run the Express API server and the Python FastAPI vision clustering microservice concurrently, execute the following commands in the `/server` directory:
 ```bash
-# 1. Install node packages
+# 1. Install Node.js packages
 npm install
 
-# 2. Run in development mode (using nodemon)
+# 2. Run both Node.js Express and Python FastAPI concurrently
 npm run dev
 
-# Or run in production mode
+# Or run only the Node.js Express server in production mode
 npm start
 ```
-The server will boot and display:
-```
-MongoDB Connected: localhost
-Server started on port 5000
-```
+
+> [!IMPORTANT]
+> **AI Service Dependencies**: Ensure that you have installed the Python dependencies in `ai_service/requirements.txt` in your active shell or virtual environment before starting `npm run dev`.
+
+When running `npm run dev`, concurrently will start:
+* Express server at `http://localhost:5000` (reloads on file changes).
+* Python FastAPI microservice at `http://localhost:8000` (reloads on file changes).
 
 ---
 
@@ -109,3 +112,4 @@ In `android/app/src/main/AndroidManifest.xml`, configure an intent filter inside
 When OAuth redirects to this URI, the backend server appends the user JWT token:
 `io.supabase.civicconnect://login-callback?token=<jwt-token>`
 The client-side `DeepLinkService` captures this token and updates headers.
+

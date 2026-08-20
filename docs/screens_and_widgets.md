@@ -65,9 +65,9 @@ Located in [issue_detail_screen.dart](../lib/screens/issue_detail_screen.dart).
 - **Purpose**: One complaint in full.
 - **Features**:
   - Always refetches rather than reading the provider's cached copy, because only this endpoint returns the status history.
-  - Full-bleed photograph at the top — the one element that is not a card, because it is the evidence.
+  - Full-bleed photograph gallery at the top supporting interactive horizontal paging (`PageView.builder`) with dot indicators and a float counter (`1/X`) when multiple photos exist for clustered issues.
   - Below it, a stack of `_Section` cards:
-    - `_Summary` — category, title, complaint reference, filing time, SLA countdown, description.
+    - `_Summary` — category, title, complaint reference, filing time, SLA countdown, and description. Displays a community priority alert banner if the issue contains duplicates (`reportCount > 1`).
     - `_LocationRow` — address and coordinates, tappable to open the system maps app.
     - `_VoteBar` — Agree / Disagree with tallies.
     - `_Timeline` — the recorded status history, oldest first, with a filled node for the current state.
@@ -123,9 +123,10 @@ Located in [admin_console_screen.dart](../lib/screens/admin_console_screen.dart)
 ### 1. IssueCard
 Located in [issue_card.dart](../lib/widgets/issue_card.dart).
 - **Purpose**: A complaint as it appears in a feed or a queue.
-- **Structure**: photograph, then a meta line (category · ward · when) with the status chip, then title, complaint reference, description, a ledger row (SLA countdown plus vote tallies), and the action row.
+- **Structure**: photograph gallery (with a multi-photo icon badge overlay if `imageUrls.length > 1`), then a meta line (category · ward · when) with the status chip, then title, complaint reference, description, a ledger row (SLA countdown, report count priority chip if `reportCount > 1`, and community vote tallies), and the action row.
 - **Visuals**:
-  - Loads images with `cached_network_image`; failures fall back to a slate placeholder.
+  - Loads images with `cached_network_image`; failures fall back to a slate placeholder. Displays a stack counter indicator if the issue has multiple photos.
+  - Displays a gray chip indicating `X reports` next to the SLA countdown when duplicate complaints have been clustered.
   - No rules between the parts — spacing does the separating.
   - Actions are **Agree**, **Disagree**, and **Discuss**, rendered as text with icons rather than three bordered thirds. Voting goes through `AppProvider.voteOnIssue`; unauthenticated taps prompt to sign in.
   - `showActions: false` renders the card read-only (used by My activity).

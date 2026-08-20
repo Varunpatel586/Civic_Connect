@@ -9,15 +9,21 @@ The project separates frontend client views from backend database operations usi
 ```
 ├── server/              # Node.js Express & MongoDB Backend
 │   ├── config/          # MongoDB db.js connection configuration
+│   ├── controllers/     # Controller layer (issueController.js)
 │   ├── middleware/      # jwt auth.js verification middleware
 │   ├── models/          # Mongoose Schemas (User.js, Issue.js, Comment.js, etc.)
 │   ├── routes/          # Express route controllers (auth.js, issues.js, comments.js)
 │   ├── uploads/         # Server folder storing uploaded image binaries
 │   ├── .env             # Server configurations
+│   ├── run-ai.js        # Helper script for running AI venv concurrently
 │   └── server.js        # Main Express application entrypoint
+├── ai_service/          # Python FastAPI Vision Microservice
+│   ├── main.py          # FastAPI server entrypoint (CLIP model comparison)
+│   ├── requirements.txt # Python dependencies
+│   └── README.md        # Dedicated FastAPI readme
 └── lib/                 # Flutter Mobile Client Source
     ├── models/          # Dart models matching backend JSON structures
-    ├── providers/       # ChangeNotifier state providers
+    ├── providers/       # AppProvider — global state
     ├── screens/         # Flutter UI pages
     ├── services/        # Flutter REST API client service layer
     ├── theme/           # Municipal Navy: colours, typography, ThemeData
@@ -29,7 +35,7 @@ The project separates frontend client views from backend database operations usi
 
 ## Architectural Pattern
 
-Civic Connect implements a classic **Client-Server Architecture**. Direct database calls from the client are prohibited for security; all transactions pass through a secure REST middle-tier API:
+Civic Connect implements a client-server architecture with an decoupled **AI Microservice** for deep learning operations. All requests flow through Node.js Express, which communicates with MongoDB and queries the FastAPI service for vision deduplication checks:
 
 ```mermaid
 graph TD
@@ -39,6 +45,8 @@ graph TD
     Express -->|Verifies JWT Tokens| Middleware[Auth Middleware]
     Express -->|Queries Mongoose Schemas| Mongo[(MongoDB Database)]
     Express -->|Saves Image Binaries| Uploads[Local Uploads Folder]
+    Express -->|Compares Visual Similarity| FastAPI[FastAPI Microservice on port 8000]
+    FastAPI -->|Runs CLIP Model| PyTorch[PyTorch / sentence-transformers]
 ```
 
 ### 1. Client Presentation Layer (UI)
@@ -66,7 +74,7 @@ Services encapsulate HTTP REST endpoints and platform functions:
 
 ## Technical Flow Diagram
 
-The following sequence diagram describes reporting a civic issue with location-aware data:
+The following sequence diagram describes reporting a civic issue with automated proximity checking and image clustering (deduplication):
 
 ```mermaid
 sequenceDiagram
@@ -77,6 +85,7 @@ sequenceDiagram
     participant EX as Express API
     participant LS as LocationService
     participant MG as MongoDB (Mongoose)
+    participant AI as FastAPI (CLIP Service)
 
     U->>CS: Capture photo of pothole
     CS->>LS: Request current coordinates
@@ -91,10 +100,34 @@ sequenceDiagram
     AC-->>ISS: Parse Local Server File URL
     ISS->>AC: post('/issues', {title, category, imageUrl, lat, lng})
     AC->>EX: POST /issues (Send JSON Payload)
+    
     EX->>LS: Geocode Coordinates to Address (on client or server)
-    EX->>MG: Save new Issue Schema in MongoDB
-    MG-->>EX: Database Confirm Insertion
-    EX-->>AC: Return JSON data of Created Issue
+    
+    rect rgb(240, 245, 255)
+        Note over EX,MG: Geospatial Proximity Check (15m)
+        EX->>MG: Find open issues within 15 meters in same category
+        MG-->>EX: Return candidate issues
+    end
+
+    alt Candidates Exist
+        rect rgb(255, 248, 235)
+            Note over EX,AI: Visual Similarity Engine
+            EX->>AI: POST /api/v1/compare (target & candidate paths)
+            AI->>AI: Compute Cosine Similarity using CLIP embeddings
+            AI-->>EX: Return match result (is_duplicate: true/false)
+        end
+    end
+
+    alt Duplicate Match Confirmed
+        EX->>MG: Merge: append reporter, append image, increment reportCount
+        MG-->>EX: Confirm merge
+        EX-->>AC: Return JSON payload (clustered: true, status: 200)
+    else No Proximity / No Visual Match / AI Error
+        EX->>MG: Save brand new Issue document (reportCount: 1)
+        MG-->>EX: Confirm insertion
+        EX-->>AC: Return JSON data of Created Issue (clustered: false, status: 201)
+    end
+    
     AC-->>ISS: Confirm Success
     ISS->>U: Show success message & return to Feed
 ```
