@@ -4,10 +4,14 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const auth = require('../middleware/auth');
+const admin = require('../middleware/admin');
 const Issue = require('../models/Issue');
 const Vote = require('../models/Vote');
 const Upvote = require('../models/Upvote');
 const jwt = require('jsonwebtoken');
+const sla = require('../config/sla');
+const config = require('../config/env');
+const { wardFilter, officerCoversWard } = require('../config/wards');
 
 const getUserIdFromRequest = (req) => {
   const authHeader = req.header('Authorization');
@@ -15,7 +19,7 @@ const getUserIdFromRequest = (req) => {
   const token = authHeader.replace('Bearer ', '');
   if (!token) return null;
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'super_secret_jwt_key_civic_connect_123');
+    const decoded = jwt.verify(token, config.jwtSecret);
     return decoded.user.id;
   } catch (err) {
     return null;
@@ -35,26 +39,113 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
+    // Safe because fileFilter already rejected anything outside the allowlist.
+    const ext = path.extname(file.originalname).toLowerCase();
     cb(null, 'photo-' + uniqueSuffix + ext);
   },
 });
-const upload = multer({ storage: storage });
+/**
+ * Only real photographs, and only small ones.
+ *
+ * Both the declared type and the extension must be on the allowlist: the
+ * extension is what ends up on disk and in the served URL, and an unchecked one
+ * let any authenticated account drop arbitrary files into a publicly served
+ * directory.
+ */
+const ALLOWED_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+]);
+const ALLOWED_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.heic',
+  '.heif',
+]);
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
-// Helper to calculate distance in KM
-const getDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  if (isNaN(c)) return 0;
-  return R * c;
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_PHOTO_BYTES, files: 1 },
+  fileFilter: (req, file, cb) => {
+    const extension = path.extname(file.originalname || '').toLowerCase();
+    if (!ALLOWED_MIME_TYPES.has(file.mimetype) || !ALLOWED_EXTENSIONS.has(extension)) {
+      const error = new Error('Only JPEG, PNG, WebP or HEIC photographs are accepted.');
+      error.code = 'INVALID_FILE_TYPE';
+      return cb(error);
+    }
+    cb(null, true);
+  },
+});
+
+/**
+ * The single wire format for an issue.
+ *
+ * Field names stay snake_case because the Dart models were written against the
+ * previous backend and still parse that shape. Every caller goes through here
+ * so a new field cannot land on one endpoint and go missing on another.
+ */
+const serializeIssue = (issue, { userVote = null, includeHistory = false } = {}) => {
+  // Populated only when the query asked for it; an unpopulated userId is an
+  // ObjectId, which is also typeof 'object', so test for a real field instead.
+  const populated =
+    issue.userId && typeof issue.userId === 'object' && 'username' in issue.userId;
+  const user = populated ? issue.userId : null;
+
+  const payload = {
+    id: issue._id.toString(),
+    user_id: user ? user._id.toString() : issue.userId ? issue.userId.toString() : '',
+    title: issue.title,
+    category: issue.category,
+    description: issue.description,
+    image_url: issue.imageUrl,
+    image_urls: issue.imageUrls,
+    latitude: issue.latitude,
+    longitude: issue.longitude,
+    address: issue.address,
+    ward: issue.ward || null,
+    status: issue.status,
+    agree_count: issue.agreeCount,
+    disagree_count: issue.disagreeCount,
+    user_vote: userVote,
+    due_at: sla.dueDate(issue),
+    is_overdue: sla.isOverdue(issue),
+    closed_at: issue.closedAt || null,
+    timestamp: issue.createdAt,
+    created_at: issue.createdAt,
+    user: {
+      username: user ? user.username : 'Unknown',
+      avatar_url: user ? user.avatarUrl : null,
+    },
+  };
+
+  if (includeHistory) {
+    payload.status_history = (issue.statusHistory || []).map((entry) => ({
+      status: entry.status,
+      changed_at: entry.changedAt,
+      note: entry.note || '',
+    }));
+  }
+
+  return payload;
+};
+
+/** Looks up the requester's votes across a batch of issues in one query. */
+const voteMapFor = async (userId, issues) => {
+  if (!userId || issues.length === 0) return {};
+  const votes = await Vote.find({
+    issueId: { $in: issues.map((i) => i._id) },
+    userId,
+  });
+  return votes.reduce((map, vote) => {
+    map[vote.issueId.toString()] = vote.isAgree ? 'agree' : 'disagree';
+    return map;
+  }, {});
 };
 
 // @route   POST api/issues/upload
@@ -66,13 +157,13 @@ router.post('/upload', auth, upload.single('photo'), (req, res) => {
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
-    const hostUrl = process.env.API_URL || 'http://localhost:5000';
+    const hostUrl = config.apiUrl;
     const fileUrl = `${hostUrl}/uploads/${req.file.filename}`;
 
     res.json({ url: fileUrl });
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server upload error');
+    res.status(500).json({ message: 'Server upload error' });
   }
 });
 
@@ -83,23 +174,71 @@ router.post('/', auth, async (req, res) => {
   const { title, description, category, imageUrl, imageUrls, latitude, longitude, address } = req.body;
 
   try {
+    // Validate before writing. Previously a missing category threw inside
+    // `category.replace(...)` and surfaced as an opaque 500, and absent
+    // coordinates were coerced to 0, 0 — a complaint in the Gulf of Guinea.
+    const allowedCategories = Issue.schema.path('category').enumValues;
+    if (!category || !allowedCategories.includes(category)) {
+      return res.status(400).json({
+        message: `Category must be one of: ${allowedCategories.join(', ')}`,
+      });
+    }
+
+    if (!imageUrl || typeof imageUrl !== 'string') {
+      return res.status(400).json({ message: 'A complaint needs at least one photograph' });
+    }
+
+    const lat = Number.parseFloat(latitude);
+    const lng = Number.parseFloat(longitude);
+
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      return res.status(400).json({ message: 'Latitude must be between -90 and 90' });
+    }
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
+      return res.status(400).json({ message: 'Longitude must be between -180 and 180' });
+    }
+    if (lat === 0 && lng === 0) {
+      return res.status(400).json({
+        message: 'A complaint needs a real location before it can be filed',
+      });
+    }
+
+    const trimmedDescription = (description || '').toString().trim();
+    if (trimmedDescription.length > 2000) {
+      return res.status(400).json({ message: 'Description is too long (2000 characters maximum)' });
+    }
+
+    const resolvedTitle = (title || category.replace('_', ' ').toUpperCase())
+      .toString()
+      .trim()
+      .slice(0, 140);
+
     const newIssue = new Issue({
       userId: req.user.id,
-      title: title || `${category.replace('_', ' ').toUpperCase()}`,
-      description,
+      title: resolvedTitle,
+      description: trimmedDescription,
       category,
       imageUrl,
-      imageUrls: imageUrls || [imageUrl],
-      latitude: parseFloat(latitude) || 0.0,
-      longitude: parseFloat(longitude) || 0.0,
+      imageUrls: Array.isArray(imageUrls) && imageUrls.length > 0 ? imageUrls : [imageUrl],
+      latitude: lat,
+      longitude: lng,
       address,
+      // Open the record with its filing entry so the timeline is never empty.
+      statusHistory: [
+        {
+          status: 'Pending',
+          changedBy: req.user.id,
+          changedAt: new Date(),
+          note: 'Complaint filed',
+        },
+      ],
     });
 
     const issue = await newIssue.save();
     res.status(201).json(issue);
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -109,70 +248,53 @@ router.post('/', auth, async (req, res) => {
 router.get('/nearby', async (req, res) => {
   const { lat, lng, radius_km = 5.0, limit = 50 } = req.query;
 
-  if (!lat || !lng) {
+  if (lat === undefined || lng === undefined) {
     return res.status(400).json({ message: 'Latitude and longitude are required' });
   }
 
-  const targetLat = parseFloat(lat);
-  const targetLng = parseFloat(lng);
-  const radius = parseFloat(radius_km);
-  const maxLimit = parseInt(limit);
+  const targetLat = Number.parseFloat(lat);
+  const targetLng = Number.parseFloat(lng);
+  const radius = Number.parseFloat(radius_km);
+  const maxLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 50, 1), 200);
+
+  if (!Number.isFinite(targetLat) || !Number.isFinite(targetLng)) {
+    return res.status(400).json({ message: 'Latitude and longitude must be numbers' });
+  }
+  if (!Number.isFinite(radius) || radius <= 0) {
+    return res.status(400).json({ message: 'radius_km must be a positive number' });
+  }
 
   try {
-    // In a production app, use MongoDB 2dsphere indexing & $near or $geoWithin.
-    // For simple and reliable queries, retrieve issues and calculate distance in Javascript:
-    const allIssues = await Issue.find().populate('userId', 'username avatarUrl').lean();
+    // $geoWithin/$centerSphere uses the 2dsphere index, so Mongo does the
+    // filtering, the sort and the limit. This route used to load every
+    // complaint in the database and measure distances in JavaScript.
+    //
+    // $centerSphere takes its radius in radians: kilometres over the Earth's
+    // mean radius.
+    const EARTH_RADIUS_KM = 6378.1;
 
-    const nearby = allIssues
-      .map((issue) => {
-        // Calculate distance manually
-        const distance = getDistance(targetLat, targetLng, issue.latitude, issue.longitude);
-        return { ...issue, distance };
-      })
-      // Filter by radius boundary (default 5.0 km)
-      .filter((issue) => issue.distance <= radius)
-      // Sort closest first or newest first
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, maxLimit);
-
-    const userId = getUserIdFromRequest(req);
-    const userVotesMap = {};
-    if (userId && nearby.length > 0) {
-      const issueIds = nearby.map(issue => issue._id);
-      const userVotes = await Vote.find({ issueId: { $in: issueIds }, userId });
-      userVotes.forEach(vote => {
-        userVotesMap[vote.issueId.toString()] = vote.isAgree ? 'agree' : 'disagree';
-      });
-    }
-
-    // Map fields to match Supabase expectations (agree_count, disagree_count, etc.)
-    const formatted = nearby.map((issue) => ({
-      id: issue._id.toString(),
-      user_id: issue.userId ? issue.userId._id.toString() : '',
-      title: issue.title,
-      category: issue.category,
-      description: issue.description,
-      image_url: issue.imageUrl,
-      image_urls: issue.imageUrls,
-      latitude: issue.latitude,
-      longitude: issue.longitude,
-      address: issue.address,
-      status: issue.status,
-      agree_count: issue.agreeCount,
-      disagree_count: issue.disagreeCount,
-      user_vote: userVotesMap[issue._id.toString()] || null,
-      timestamp: issue.createdAt,
-      created_at: issue.createdAt,
-      user: {
-        username: issue.userId ? issue.userId.username : 'Unknown',
-        avatar_url: issue.userId ? issue.userId.avatarUrl : null,
+    const issues = await Issue.find({
+      location: {
+        $geoWithin: {
+          $centerSphere: [[targetLng, targetLat], radius / EARTH_RADIUS_KM],
+        },
       },
-    }));
+    })
+      .sort({ createdAt: -1 })
+      .limit(maxLimit)
+      .populate('userId', 'username avatarUrl')
+      .lean();
 
-    res.json(formatted);
+    const userVotes = await voteMapFor(getUserIdFromRequest(req), issues);
+
+    res.json(
+      issues.map((issue) =>
+        serializeIssue(issue, { userVote: userVotes[issue._id.toString()] || null })
+      )
+    );
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -183,30 +305,117 @@ router.get('/user', auth, async (req, res) => {
   try {
     const issues = await Issue.find({ userId: req.user.id })
       .populate('userId', 'username avatarUrl')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    const formatted = issues.map((issue) => ({
-      id: issue._id.toString(),
-      user_id: issue.userId ? issue.userId._id.toString() : '',
-      title: issue.title,
-      category: issue.category,
-      description: issue.description,
-      image_url: issue.imageUrl,
-      image_urls: issue.imageUrls,
-      latitude: issue.latitude,
-      longitude: issue.longitude,
-      address: issue.address,
-      status: issue.status,
-      agree_count: issue.agreeCount,
-      disagree_count: issue.disagreeCount,
-      timestamp: issue.createdAt,
-      created_at: issue.createdAt,
-    }));
+    const userVotes = await voteMapFor(req.user.id, issues);
 
-    res.json(formatted);
+    res.json(
+      issues.map((issue) =>
+        serializeIssue(issue, { userVote: userVotes[issue._id.toString()] || null })
+      )
+    );
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   GET api/issues/stats
+// @desc    Ward-level counters for the municipal overview
+// @access  Admin
+router.get('/stats', auth, admin, async (req, res) => {
+  try {
+    // Read-and-reduce rather than an aggregation pipeline: the overdue test is
+    // per-category window arithmetic that Mongo cannot express cheaply, and at
+    // municipal-ward volumes this stays well inside a single round trip.
+    // Scoped: an officer's numbers should describe the ward they answer
+    // for, not the whole city.
+    const issues = await Issue.find(wardFilter(req.user.wards)).lean();
+    const now = new Date();
+
+    const open = issues.filter((issue) => !sla.isClosed(issue));
+    const overdue = open.filter((issue) => sla.isOverdue(issue, now));
+    const resolved = issues.filter((issue) => issue.status === 'Resolved');
+
+    // Only complaints with a recorded closure contribute — an unmeasured one
+    // would otherwise drag the average toward zero.
+    const measured = resolved.filter((issue) => issue.closedAt);
+    const avgCloseDays = measured.length
+      ? measured.reduce(
+          (total, issue) =>
+            total + (new Date(issue.closedAt) - new Date(issue.createdAt)),
+          0
+        ) /
+        measured.length /
+        86400000
+      : null;
+
+    const counts = issues.reduce((map, issue) => {
+      map[issue.category] = (map[issue.category] || 0) + 1;
+      return map;
+    }, {});
+
+    const byCategory = Object.entries(counts)
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count);
+
+    res.json({
+      wards: req.user.wards.length > 0 ? req.user.wards : null,
+      total: issues.length,
+      open: open.length,
+      overdue: overdue.length,
+      resolved: resolved.length,
+      rejected: issues.filter((issue) => issue.status === 'Rejected').length,
+      in_progress: issues.filter((issue) => issue.status === 'In Progress').length,
+      avg_close_days: avgCloseDays === null ? null : Number(avgCloseDays.toFixed(1)),
+      measured_closures: measured.length,
+      by_category: byCategory,
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   GET api/issues/queue
+// @desc    Triage queue, hardest work first
+// @access  Admin
+router.get('/queue', auth, admin, async (req, res) => {
+  const { status, category, limit = 100 } = req.query;
+
+  try {
+    const filter = { ...wardFilter(req.user.wards) };
+    if (status) filter.status = status;
+    if (category) filter.category = category;
+
+    const issues = await Issue.find(filter)
+      .populate('userId', 'username avatarUrl')
+      .lean();
+
+    const now = new Date();
+
+    // Triage order: what is late, then what the most people are waiting on,
+    // then what has been waiting longest.
+    const ranked = issues
+      .map((issue) => ({ ...issue, overdue: sla.isOverdue(issue, now) }))
+      .sort((a, b) => {
+        if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+        if (b.agreeCount !== a.agreeCount) return b.agreeCount - a.agreeCount;
+        return new Date(a.createdAt) - new Date(b.createdAt);
+      })
+      .slice(0, parseInt(limit));
+
+    const userVotes = await voteMapFor(req.user.id, ranked);
+
+    res.json(
+      ranked.map((issue) =>
+        serializeIssue(issue, { userVote: userVotes[issue._id.toString()] || null })
+      )
+    );
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -215,7 +424,9 @@ router.get('/user', auth, async (req, res) => {
 // @access  Public
 router.get('/:id', async (req, res) => {
   try {
-    const issue = await Issue.findById(req.params.id).populate('userId', 'username avatarUrl');
+    const issue = await Issue.findById(req.params.id)
+      .populate('userId', 'username avatarUrl')
+      .lean();
     if (!issue) {
       return res.status(404).json({ message: 'Issue not found' });
     }
@@ -223,65 +434,75 @@ router.get('/:id', async (req, res) => {
     const userId = getUserIdFromRequest(req);
     let userVote = null;
     if (userId) {
-      const voteObj = await Vote.findOne({ issueId: issue.id, userId });
+      const voteObj = await Vote.findOne({ issueId: issue._id, userId });
       if (voteObj) {
         userVote = voteObj.isAgree ? 'agree' : 'disagree';
       }
     }
 
-    const formatted = {
-      id: issue._id.toString(),
-      user_id: issue.userId ? issue.userId._id.toString() : '',
-      title: issue.title,
-      category: issue.category,
-      description: issue.description,
-      image_url: issue.imageUrl,
-      image_urls: issue.imageUrls,
-      latitude: issue.latitude,
-      longitude: issue.longitude,
-      address: issue.address,
-      status: issue.status,
-      agree_count: issue.agreeCount,
-      disagree_count: issue.disagreeCount,
-      user_vote: userVote,
-      timestamp: issue.createdAt,
-      created_at: issue.createdAt,
-      user: {
-        username: issue.userId ? issue.userId.username : 'Unknown',
-        avatar_url: issue.userId ? issue.userId.avatarUrl : null,
-      },
-    };
-
-    res.json(formatted);
+    res.json(serializeIssue(issue, { userVote, includeHistory: true }));
   } catch (err) {
     console.error(err.message);
     if (err.kind === 'ObjectId') {
       return res.status(404).json({ message: 'Issue not found' });
     }
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
 // @route   PATCH api/issues/:id/status
-// @desc    Update issue status (Admin only in production)
-// @access  Private
-router.patch('/:id/status', auth, async (req, res) => {
-  const { status } = req.body;
+// @desc    Move a complaint through its lifecycle
+// @access  Admin
+router.patch('/:id/status', auth, admin, async (req, res) => {
+  const { status, note } = req.body;
 
   try {
+    const allowed = Issue.schema.path('status').enumValues;
+    if (!allowed.includes(status)) {
+      return res.status(400).json({
+        message: `Status must be one of: ${allowed.join(', ')}`,
+      });
+    }
+
     const issue = await Issue.findById(req.params.id);
     if (!issue) {
       return res.status(404).json({ message: 'Issue not found' });
     }
 
+    if (!officerCoversWard(req.user.wards, issue.ward)) {
+      return res.status(403).json({
+        message: 'This complaint is outside the wards you are assigned to',
+      });
+    }
+
+    if (issue.status === status) {
+      return res.status(200).json(serializeIssue(issue, { includeHistory: true }));
+    }
+
+    const now = new Date();
     issue.status = status;
-    issue.updatedAt = Date.now();
+    issue.updatedAt = now;
+    issue.statusHistory.push({
+      status,
+      changedBy: req.user.id,
+      changedAt: now,
+      note: (note || '').trim(),
+    });
+
+    // Stamp the first closure, and clear it if the complaint is reopened, so
+    // resolution-time metrics measure the run that actually closed it.
+    if (sla.TERMINAL_STATUSES.includes(status)) {
+      issue.closedAt = issue.closedAt || now;
+    } else {
+      issue.closedAt = null;
+    }
+
     await issue.save();
 
-    res.json(issue);
+    res.json(serializeIssue(issue, { includeHistory: true }));
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -330,7 +551,7 @@ router.post('/:id/vote', auth, async (req, res) => {
     });
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error in voting');
+    res.status(500).json({ message: 'Server error in voting' });
   }
 });
 
@@ -361,7 +582,7 @@ router.post('/:id/upvote', auth, async (req, res) => {
     }
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error toggling upvote');
+    res.status(500).json({ message: 'Server error toggling upvote' });
   }
 });
 
@@ -374,7 +595,7 @@ router.get('/:id/upvote/count', async (req, res) => {
     res.json({ count });
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 });
 

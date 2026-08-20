@@ -24,7 +24,7 @@ router.get('/user', auth, async (req, res) => {
     res.json(formatted);
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -56,7 +56,7 @@ router.get('/issue/:issueId', async (req, res) => {
     res.json(formatted);
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -106,7 +106,7 @@ router.post('/issue/:issueId', auth, async (req, res) => {
     res.status(201).json(formatted);
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -151,7 +151,7 @@ router.put('/:id', auth, async (req, res) => {
     res.json(formatted);
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -174,7 +174,7 @@ router.delete('/:id', auth, async (req, res) => {
     res.json({ message: 'Comment removed successfully' });
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
