@@ -16,8 +16,7 @@ class ApiClient {
   ///
   /// `10.0.2.2` is the Android emulator's alias for the host machine and
   /// resolves to nothing anywhere else, so it is rewritten for web and desktop
-  /// builds. That lets one `.env.client` serve every target instead of being
-  /// edited per platform.
+  /// builds. The value comes from the shared root `.env` file.
   String get baseUrl {
     final configured = dotenv.env['API_BASE_URL'];
     if (configured == null || configured.isEmpty) {

@@ -13,9 +13,9 @@ import 'widgets/auth_wrapper.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Client configuration only. Server secrets stay in `.env`, which is not
-  // bundled — see .env.client for why.
-  await dotenv.load(fileName: ".env.client");
+  // Flutter and the server share the root environment file during local
+  // development.
+  await dotenv.load(fileName: '.env');
 
   // Initialize Provider state asynchronously (non-blocking)
   final appProvider = AppProvider()..initialize();
