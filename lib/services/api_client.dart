@@ -8,6 +8,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiClient {
+  static const _requestTimeout = Duration(seconds: 15);
+
   static final ApiClient _instance = ApiClient._internal();
   factory ApiClient() => _instance;
   ApiClient._internal();
@@ -16,8 +18,7 @@ class ApiClient {
   ///
   /// `10.0.2.2` is the Android emulator's alias for the host machine and
   /// resolves to nothing anywhere else, so it is rewritten for web and desktop
-  /// builds. That lets one `.env.client` serve every target instead of being
-  /// edited per platform.
+  /// builds. The value comes from the shared root `.env` file.
   String get baseUrl {
     final configured = dotenv.env['API_BASE_URL'];
     if (configured == null || configured.isEmpty) {
@@ -77,7 +78,7 @@ class ApiClient {
     try {
       final uri = Uri.parse('$baseUrl$path');
       final headers = await _headers();
-      return await http.get(uri, headers: headers);
+      return await http.get(uri, headers: headers).timeout(_requestTimeout);
     } catch (e) {
       debugPrint('ApiClient GET error: $e');
       rethrow;
@@ -88,7 +89,9 @@ class ApiClient {
     try {
       final uri = Uri.parse('$baseUrl$path');
       final headers = await _headers();
-      return await http.post(uri, headers: headers, body: jsonEncode(body));
+      return await http
+          .post(uri, headers: headers, body: jsonEncode(body))
+          .timeout(_requestTimeout);
     } catch (e) {
       debugPrint('ApiClient POST error: $e');
       rethrow;
@@ -99,7 +102,9 @@ class ApiClient {
     try {
       final uri = Uri.parse('$baseUrl$path');
       final headers = await _headers();
-      return await http.put(uri, headers: headers, body: jsonEncode(body));
+      return await http
+          .put(uri, headers: headers, body: jsonEncode(body))
+          .timeout(_requestTimeout);
     } catch (e) {
       debugPrint('ApiClient PUT error: $e');
       rethrow;
@@ -110,7 +115,9 @@ class ApiClient {
     try {
       final uri = Uri.parse('$baseUrl$path');
       final headers = await _headers();
-      return await http.patch(uri, headers: headers, body: jsonEncode(body));
+      return await http
+          .patch(uri, headers: headers, body: jsonEncode(body))
+          .timeout(_requestTimeout);
     } catch (e) {
       debugPrint('ApiClient PATCH error: $e');
       rethrow;
@@ -121,7 +128,7 @@ class ApiClient {
     try {
       final uri = Uri.parse('$baseUrl$path');
       final headers = await _headers();
-      return await http.delete(uri, headers: headers);
+      return await http.delete(uri, headers: headers).timeout(_requestTimeout);
     } catch (e) {
       debugPrint('ApiClient DELETE error: $e');
       rethrow;
@@ -185,8 +192,10 @@ class ApiClient {
         );
       }
 
-      final streamedResponse = await request.send();
-      return await http.Response.fromStream(streamedResponse);
+      final streamedResponse = await request.send().timeout(_requestTimeout);
+      return await http.Response.fromStream(
+        streamedResponse,
+      ).timeout(_requestTimeout);
     } catch (e) {
       debugPrint('ApiClient uploadMultipart error: $e');
       rethrow;

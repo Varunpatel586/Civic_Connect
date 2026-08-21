@@ -84,6 +84,18 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  Future<void> _refreshIssue(String issueId) async {
+    final updatedIssue = await _issueService.getIssueById(issueId);
+    if (!mounted || updatedIssue == null) return;
+
+    final index = _issues.indexWhere((issue) => issue.id == issueId);
+    if (index == -1) return;
+    setState(() {
+      _issues[index] = updatedIssue;
+      if (_selected?.id == issueId) _selected = updatedIssue;
+    });
+  }
+
   /// Frames every plotted complaint, so the map never opens somewhere with
   /// nothing on it.
   void _fitToComplaints() {
@@ -243,13 +255,16 @@ class _MapScreenState extends State<MapScreen> {
             bottom: 14,
             child: _SelectedCard(
               issue: _selected!,
-              onOpen: () => Navigator.of(context)
-                  .push(
-                    MaterialPageRoute(
-                      builder: (_) => IssueDetailScreen(issueId: _selected!.id),
-                    ),
-                  )
-                  .then((_) => _load()),
+              onOpen: () {
+                final issueId = _selected!.id;
+                Navigator.of(context)
+                    .push(
+                      MaterialPageRoute(
+                        builder: (_) => IssueDetailScreen(issueId: issueId),
+                      ),
+                    )
+                    .then((_) => _refreshIssue(issueId));
+              },
               onDismiss: () => setState(() => _selected = null),
             ),
           ),
