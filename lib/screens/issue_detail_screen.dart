@@ -54,10 +54,20 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
   /// Always refetches rather than reading the provider's cached copy: this
   /// screen shows the status history, which list endpoints do not return.
   Future<void> _load() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+    await _loadData(showLoading: true);
+  }
+
+  Future<void> _refreshData() async {
+    await _loadData(showLoading: false);
+  }
+
+  Future<void> _loadData({required bool showLoading}) async {
+    if (showLoading) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
 
     try {
       final issue = await _issueService.getIssueById(widget.issueId);
@@ -99,7 +109,7 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
 
     try {
       await appProvider.voteOnIssue(widget.issueId, isAgree);
-      await _load();
+      await _refreshData();
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(
@@ -120,6 +130,7 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
 
     try {
       await appProvider.addComment(widget.issueId, content);
+      await _refreshData();
       _commentController.clear();
     } catch (e) {
       messenger.showSnackBar(
@@ -280,7 +291,8 @@ class _EvidenceState extends State<_Evidence> {
                 imageUrl: ApiClient().normalizeUrl(urls[index]),
                 fit: BoxFit.cover,
                 fadeInDuration: const Duration(milliseconds: 180),
-                placeholder: (context, url) => Container(color: AppColors.slate100),
+                placeholder: (context, url) =>
+                    Container(color: AppColors.slate100),
                 errorWidget: (context, url, error) => Container(
                   color: AppColors.slate100,
                   child: const Icon(

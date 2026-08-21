@@ -21,7 +21,9 @@ enum FeedScope {
 
 /// The citizen feed: what has been reported, newest first.
 class FeedScreen extends StatefulWidget {
-  const FeedScreen({super.key});
+  final int refreshToken;
+
+  const FeedScreen({super.key, this.refreshToken = 0});
 
   @override
   State<FeedScreen> createState() => _FeedScreenState();
@@ -49,6 +51,12 @@ class _FeedScreenState extends State<FeedScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant FeedScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshToken != widget.refreshToken) _load();
   }
 
   Future<void> _load() async {
@@ -99,6 +107,15 @@ class _FeedScreenState extends State<FeedScreen> {
 
     setState(() => _scope = scope);
     await _load();
+  }
+
+  Future<void> _refreshIssue(String issueId) async {
+    final updatedIssue = await _issueService.getIssueById(issueId);
+    if (!mounted || updatedIssue == null) return;
+
+    final index = _issues.indexWhere((issue) => issue.id == issueId);
+    if (index == -1) return;
+    setState(() => _issues[index] = updatedIssue);
   }
 
   List<Issue> get _visible {
@@ -179,7 +196,7 @@ class _FeedScreenState extends State<FeedScreen> {
                   ),
                 )
                 .then((_) => _load()),
-            onVote: _load,
+            onVote: _refreshIssue,
           );
         },
       ),
