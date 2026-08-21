@@ -79,9 +79,10 @@ server/
 
 ### 1. Environment
 
-Two files, and the split matters.
-
-**`.env`** in the project root — server secrets. Never bundled into the app.
+One root **`.env`** file is used by both the Flutter client and Node server
+during local development. Copy `.env.example` to `.env` and fill in the values.
+Flutter bundles the file, so do not use this arrangement for production builds:
+anything bundled with Flutter can be read by the app user.
 
 ```ini
 PORT=5000
@@ -99,14 +100,6 @@ API_URL=http://localhost:5000
 
 The server refuses to start if `JWT_SECRET` or `MONGO_URI` is missing, and warns
 at boot if the secret is a known placeholder. See [`.env.example`](.env.example).
-
-**`.env.client`** — client configuration. Flutter packages this as an asset, so
-**anything in it ships inside the APK and is readable by anyone who downloads it**.
-Nothing secret goes here.
-
-```ini
-API_BASE_URL=http://10.0.2.2:5000/api
-```
 
 | Target | `API_BASE_URL` |
 |---|---|
@@ -197,7 +190,7 @@ Things that were wrong and are now handled, in case you are asked:
 | **Uploads** | 8 MB ceiling, one file per request, JPEG/PNG/WebP/HEIC only by both MIME type and extension. Served with `nosniff`. |
 | **Brute force** | 20 attempts per 15 minutes on the credential endpoints, 600 per 15 minutes overall. |
 | **Ward scoping** | Officers act only on complaints in the wards assigned to them. No assignment means every ward, so the restriction is opt-in. |
-| **Client secrets** | `.env.client` is the only env file bundled into the app; the database URI and JWT secret never leave the server. |
+| **Environment** | One root `.env` file supplies local Flutter and Node configuration. Do not bundle server secrets in production. |
 | **Errors** | Every endpoint answers with JSON, including 404s, rate limits and crashes, so the client never parses an HTML error page. |
 
 Proximity search uses a `2dsphere` index and `$geoWithin`, so Mongo does the

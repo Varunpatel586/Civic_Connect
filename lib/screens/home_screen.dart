@@ -60,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final screens = [
-      FeedScreen(key: ValueKey(_feedRevision)),
+      FeedScreen(refreshToken: _feedRevision),
       const MapScreen(),
       const SizedBox.shrink(),
       const ProfileScreen(),

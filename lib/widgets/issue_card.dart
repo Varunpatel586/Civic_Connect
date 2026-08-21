@@ -22,7 +22,7 @@ import 'status_chip.dart';
 class IssueCard extends StatelessWidget {
   final Issue issue;
   final VoidCallback? onTap;
-  final VoidCallback? onVote;
+  final ValueChanged<String>? onVote;
   final bool showActions;
 
   const IssueCard({
@@ -118,8 +118,7 @@ class _Evidence extends StatelessWidget {
             imageUrl: ApiClient().normalizeUrl(issue.imageUrl),
             fit: BoxFit.cover,
             fadeInDuration: const Duration(milliseconds: 180),
-            placeholder: (context, url) =>
-                Container(color: AppColors.slate100),
+            placeholder: (context, url) => Container(color: AppColors.slate100),
             errorWidget: (context, url, error) => Container(
               color: AppColors.slate100,
               child: const Icon(
@@ -290,9 +289,9 @@ class _Tally extends StatelessWidget {
         const SizedBox(width: 3),
         Text(
           '$count',
-          style: AppTypography.inlineCount(color: color).copyWith(
-            fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-          ),
+          style: AppTypography.inlineCount(
+            color: color,
+          ).copyWith(fontWeight: active ? FontWeight.w600 : FontWeight.w400),
         ),
       ],
     );
@@ -303,7 +302,7 @@ class _Tally extends StatelessWidget {
 class _Actions extends StatelessWidget {
   final Issue issue;
   final AppProvider appProvider;
-  final VoidCallback? onVote;
+  final ValueChanged<String>? onVote;
   final VoidCallback? onTap;
 
   const _Actions({
@@ -359,7 +358,7 @@ class _Actions extends StatelessWidget {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await appProvider.voteOnIssue(issue.id, isAgree);
-      (onVote ?? onTap)?.call();
+      onVote?.call(issue.id);
     } catch (_) {
       messenger.showSnackBar(
         SnackBar(

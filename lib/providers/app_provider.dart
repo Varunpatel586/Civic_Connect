@@ -270,8 +270,6 @@ class AppProvider with ChangeNotifier {
         userId: _currentUser!.id,
         isAgree: isAgree,
       );
-      await _loadIssueWithComments(issueId);
-      notifyListeners();
     } catch (e) {
       debugPrint('Error voting on issue: $e');
       rethrow;
@@ -303,71 +301,47 @@ class AppProvider with ChangeNotifier {
   /// Load or refresh comments for a specific issue
   Future<void> loadCommentsForIssue(String issueId) async {
     try {
-      _setLoading(true);
       final comments = await _issueService.getIssueComments(issueId);
       _issueComments[issueId] = comments;
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading comments: $e');
       rethrow;
-    } finally {
-      _setLoading(false);
     }
   }
 
   /// Add a comment to an issue
   Future<void> addComment(String issueId, String content) async {
     try {
-      _setLoading(true);
       final commentService = CommentService();
       await commentService.addComment(issueId: issueId, content: content);
-      
-      // Refresh the comments for this issue
       await loadCommentsForIssue(issueId);
-      
-      // Also refresh the issue to update comment count if needed
-      await _loadIssueWithComments(issueId);
     } catch (e) {
       debugPrint('Error adding comment: $e');
       rethrow;
-    } finally {
-      _setLoading(false);
     }
   }
 
   Future<void> _loadIssueWithComments(String issueId) async {
     try {
-      _setLoading(true);
-      
-      // Update in nearby issues
-      final index = _nearbyIssues.indexWhere((issue) => issue.id == issueId);
-      if (index != -1) {
-        final updatedIssue = await _issueService.getIssueById(issueId);
-        if (updatedIssue != null) {
-          _nearbyIssues[index] = updatedIssue;
-        }
-      }
+      final updatedIssue = await _issueService.getIssueById(issueId);
 
-      // Update in user issues
-      final userIssueIndex = _userIssues.indexWhere(
-        (issue) => issue.id == issueId,
-      );
-      if (userIssueIndex != -1) {
-        final updatedIssue = await _issueService.getIssueById(issueId);
-        if (updatedIssue != null) {
-          _userIssues[userIssueIndex] = updatedIssue;
-        }
+      if (updatedIssue != null) {
+        final nearbyIndex = _nearbyIssues.indexWhere(
+          (issue) => issue.id == issueId,
+        );
+        if (nearbyIndex != -1) _nearbyIssues[nearbyIndex] = updatedIssue;
+
+        final userIssueIndex = _userIssues.indexWhere(
+          (issue) => issue.id == issueId,
+        );
+        if (userIssueIndex != -1) _userIssues[userIssueIndex] = updatedIssue;
       }
-      
-      // Refresh comments for this issue
       await loadCommentsForIssue(issueId);
-      
       notifyListeners();
     } catch (e) {
       debugPrint('Error updating issue with comments: $e');
       rethrow;
-    } finally {
-      _setLoading(false);
     }
   }
 
