@@ -1,30 +1,59 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// Replaces the generated counter-app smoke test, which tested a widget tree
+// this app has never had. `MyApp` cannot be pumped directly because `main()`
+// loads `.env` and kicks off location work first, so the theme is exercised
+// here instead — it is the piece every screen depends on.
 
+import 'package:civic_connect/theme/app_colors.dart';
+import 'package:civic_connect/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:civic_connect/main.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  setUpAll(() {
+    GoogleFonts.config.allowRuntimeFetching = false;
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  test('theme builds without throwing', () {
+    expect(AppTheme.light(), isA<ThemeData>());
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  test('navy carries the primary role', () {
+    expect(AppTheme.light().colorScheme.primary, AppColors.navy900);
+  });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  test('amber is the accent, not the primary', () {
+    final scheme = AppTheme.light().colorScheme;
+
+    expect(scheme.secondary, AppColors.amber700);
+    expect(scheme.primary, isNot(AppColors.amber700));
+  });
+
+  test('surfaces lift with shadow, never with Material elevation', () {
+    final theme = AppTheme.light();
+
+    expect(theme.cardTheme.elevation, 0);
+    expect(theme.appBarTheme.elevation, 0);
+    expect(theme.appBarTheme.scrolledUnderElevation, 0);
+  });
+
+  testWidgets('scaffolds paint the canvas colour', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: const Scaffold(body: SizedBox()),
+      ),
+    );
+
+    final scaffold = tester.widget<Material>(
+      find
+          .descendant(
+            of: find.byType(Scaffold),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+
+    expect(scaffold.color, AppColors.canvas);
   });
 }

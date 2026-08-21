@@ -18,14 +18,14 @@ This document serves as an updated, exhaustive report detailing all aspects of t
 1. **Reduce Friction in Reporting**: Allow citizens to capture photos and submit complaints immediately with automated location pinpointing.
 2. **Community Validation (Democratic Verification)**: Prevent fake or duplicate complaints by allowing the community to vote ("Agree" or "Disagree") on reported issues.
 3. **Transparency**: Enable tracking of reported issues through status changes (`Pending`, `In Progress`, `Resolved`, `Rejected`).
-4. **Offline Capability & Mock Fallbacks**: Present simulated local feeds to guarantee usability even during initial setup or remote tests.
+4. **Accountability Against a Clock**: Hold every complaint to a response deadline derived from its category (`SlaPolicy`), surface overdue work first in the officer's queue, and show the same countdown to citizens that officers see.
 
 ---
 
 ## 2. High-Level Technical Stack
 
 The application leverage the following technologies:
-- **Client Framework**: [Flutter](https://flutter.dev/) (SDK `^3.9.2`, target Dart `^3.9.2`) utilizing Material 3.
+- **Client Framework**: [Flutter](https://flutter.dev/) (SDK `3.35.3`, target Dart `3.9.2`) utilizing Material 3.
 - **Backend API**: [Node.js & Express](https://expressjs.com/) with Multer for binary image handling and jsonwebtoken/bcryptjs for auth security.
 - **Database**: [MongoDB](https://www.mongodb.com/) via Mongoose ODM.
 - **Client State Management**: [Provider](https://pub.dev/packages/provider) for reactive state propagation and global model handling.
@@ -45,41 +45,44 @@ The application leverage the following technologies:
 Below is a detailed walkthrough of all implementation files.
 
 ### Client-Side Root & Models (`lib/`)
-- **[main.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/main.dart)**:
+- **[main.dart](../../lib/main.dart)**:
   - Initializes widget bindings and loads environment variables from the parent `.env`.
   - Configures the REST services and initializes `DeepLinkService`.
   - Supplies the global `AppProvider` to the widget tree using `ChangeNotifierProvider` to prevent startup exceptions.
-- **[user_profile.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/models/user_profile.dart)**:
+- **[user_profile.dart](../../lib/models/user_profile.dart)**:
   - Maps user account details (`id`, `username`, `email`, `role`, `avatarUrl`, `createdAt`).
-- **[issue.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/models/issue.dart)**:
+- **[issue.dart](../../lib/models/issue.dart)**:
   - Maps reported complaints. Holds coordinate parameters, image URLs, address strings, vote counts, status states, and user vote info.
 
 ### Client-Side Providers & Services
-- **[app_provider.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/providers/app_provider.dart)**:
+- **[app_provider.dart](../../lib/providers/app_provider.dart)**:
   - The central coordinator of the app's global state (currentUser, nearbyIssues, userIssues).
-- **[api_client.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/api_client.dart)**:
+- **[api_client.dart](../../lib/services/api_client.dart)**:
   - Generic HTTP client wrapping headers, JWT authentication token loading from `SharedPreferences`, and multipart file uploading.
-- **[auth_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/auth_service.dart)**:
+- **[auth_service.dart](../../lib/services/auth_service.dart)**:
   - Connects to `/auth/login`, `/auth/signup`, `/auth/profile`, and `/auth/google`.
-- **[issue_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/issue_service.dart)**:
+- **[issue_service.dart](../../lib/services/issue_service.dart)**:
   - Queries `/issues/nearby`, `/issues/user`, and `/issues/:id/vote`.
-- **[comment_service.dart](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/lib/services/comment_service.dart)**:
+- **[comment_service.dart](../../lib/services/comment_service.dart)**:
   - Queries `/comments/issue/:id` CRUD routes.
+- **[admin_service.dart](../../lib/services/admin_service.dart)**:
+  - Provides REST methods for municipal officers, including `getStats()`, `getQueue()`, and `updateStatus()`.
+
 
 ### Server-Side Files (`server/`)
-- **[server.js](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/server/server.js)**:
+- **[server.js](../../server/server.js)**:
   - Express application entrypoint. Configures CORS, parses JSON payloads, serves the `/uploads` folder statically, and registers API routers. Loads the unified `.env` file from the parent directory.
-- **[db.js](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/server/config/db.js)**:
+- **[db.js](../../server/config/db.js)**:
   - Establishes connection to MongoDB via Mongoose ODM.
-- **[auth.js](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/server/middleware/auth.js)**:
+- **[auth.js](../../server/middleware/auth.js)**:
   - Verification middleware extracting JWT tokens from request headers and attaching decoded user objects.
-- **[User.js](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/server/models/User.js)**:
+- **[User.js](../../server/models/User.js)**:
   - User model schema mapping fields: `username`, `email` (unique), hashed `password`, and enum `role` ('user', 'admin').
-- **[Issue.js](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/server/models/Issue.js)**:
+- **[Issue.js](../../server/models/Issue.js)**:
   - Complaint report schema mapping fields: `userId`, coordinates, address, and status. Indexed for geolocated proximity searches.
-- **[Comment.js](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/server/models/Comment.js)**:
+- **[Comment.js](../../server/models/Comment.js)**:
   - Stores replies linking issue IDs and user IDs.
-- **[Vote.js](file:///E:/CODES/Mobile_Dev/Flutter/Civic_Connect/server/models/Vote.js)**:
+- **[Vote.js](../../server/models/Vote.js)**:
   - Stores Agree/Disagree verification votes. Constrained to one vote per user per issue via compound indexes.
 
 ---
@@ -132,20 +135,12 @@ erDiagram
         date createdAt
         date updatedAt
     }
-    upvotes {
-        ObjectId id PK
-        ObjectId issueId FK
-        ObjectId userId FK
-        date createdAt
-    }
 
     users ||--o{ issues : "reports"
     users ||--o{ comments : "writes"
     users ||--o{ votes : "casts"
-    users ||--o{ upvotes : "toggles"
     issues ||--o{ comments : "receives"
     issues ||--o{ votes : "receives"
-    issues ||--o{ upvotes : "receives"
 ```
 
 ### Constraints & Security

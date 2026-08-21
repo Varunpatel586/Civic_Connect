@@ -5,20 +5,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-import java.util.Properties
-import java.io.FileInputStream
-
-val envFile = file("../../.env")
-val env = Properties()
-if (envFile.exists()) {
-    env.load(FileInputStream(envFile))
-}
-val googleMapsApiKey = env.getProperty("GOOGLE_MAPS_API_KEY") ?: "YOUR_GOOGLE_MAPS_API_KEY"
-
 android {
     namespace = "com.example.civic_connect"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.0.12077973"
+
+
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -38,7 +30,6 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        manifestPlaceholders["googleMapsApiKey"] = googleMapsApiKey
     }
 
     buildTypes {

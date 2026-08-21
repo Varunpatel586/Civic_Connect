@@ -1,11 +1,26 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
+const { OAuth2Client } = require('google-auth-library');
+const config = require('../config/env');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_civic_connect_123';
+/**
+ * Client IDs this server will accept Google tokens for.
+ *
+ * Android, iOS and web each get their own OAuth client, so this is a list.
+ * Set GOOGLE_CLIENT_IDS in .env as a comma-separated string.
+ */
+const GOOGLE_CLIENT_IDS = config.googleClientIds;
+
+// Null when nothing is configured, which makes /google refuse rather than
+// fall back to trusting the caller.
+const googleClient = GOOGLE_CLIENT_IDS.length > 0 ? new OAuth2Client() : null;
+
+const JWT_SECRET = config.jwtSecret;
 
 // Generate Token
 const generateToken = (user) => {
@@ -60,7 +75,7 @@ router.post('/signup', async (req, res) => {
     });
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -93,7 +108,7 @@ router.post('/login', async (req, res) => {
     });
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -116,7 +131,7 @@ router.get('/profile', auth, async (req, res) => {
     });
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -147,56 +162,60 @@ router.put('/profile', auth, async (req, res) => {
     res.json({ message: 'Profile updated successfully' });
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
 // @route   POST api/auth/google
-// @desc    OAuth with Google
+// @desc    Exchange a Google ID token for a session
 // @access  Public
 router.post('/google', async (req, res) => {
   const { idToken } = req.body;
 
+  if (!idToken) {
+    return res.status(400).json({ message: 'ID Token is required' });
+  }
+
+  // Fail closed. The previous implementation base64-decoded the token body and
+  // trusted whatever email it found, which let anyone sign in as anyone.
+  if (!googleClient) {
+    return res.status(503).json({
+      message:
+        'Google sign-in is not configured on this server. Set GOOGLE_CLIENT_IDS in .env.',
+    });
+  }
+
   try {
-    if (!idToken) {
-      return res.status(400).json({ message: 'ID Token is required' });
+    let payload;
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: GOOGLE_CLIENT_IDS,
+      });
+      payload = ticket.getPayload();
+    } catch (verifyError) {
+      console.warn('Rejected Google ID token:', verifyError.message);
+      return res.status(401).json({ message: 'Google sign-in could not be verified' });
     }
 
-    // In production, verify Google ID token using: google-auth-library
-    // For demonstration and testing, decode token payload safely or mock Google user retrieval:
-    let email, username, avatarUrl;
-    
-    // Simple verification mock
-    if (idToken.startsWith('eyJ')) { // standard JWT signature header
-      const base64Url = idToken.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-        Buffer.from(base64, 'base64')
-          .toString()
-          .split('')
-          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-          .join('')
-      );
-      const decodedToken = JSON.parse(jsonPayload);
-      email = decodedToken.email;
-      username = decodedToken.name || email.split('@')[0];
-      avatarUrl = decodedToken.picture;
-    } else {
-      // Mocked callback test details
-      email = 'google_user@gmail.com';
-      username = 'GoogleUser';
-      avatarUrl = null;
+    // Google sets this false for addresses it has not confirmed; accepting one
+    // would let someone claim an address they do not control.
+    if (!payload || !payload.email || payload.email_verified !== true) {
+      return res
+        .status(401)
+        .json({ message: 'Google account has no verified email address' });
     }
 
+    const email = payload.email.toLowerCase();
     let user = await User.findOne({ email });
 
     if (!user) {
-      // Create user
       user = new User({
-        username: username.replace(/\s+/g, '').toLowerCase() + Math.floor(Math.random() * 1000),
+        username: await buildUniqueUsername(payload.name || email.split('@')[0]),
         email,
-        password: await bcrypt.hash(Math.random().toString(36), 10), // Random placeholder password
-        avatarUrl,
+        // Placeholder: this account signs in through Google, not a password.
+        password: await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10),
+        avatarUrl: payload.picture || null,
       });
       await user.save();
     }
@@ -213,8 +232,31 @@ router.post('/google', async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).send('Server error in Google Sign-In');
+    res.status(500).json({ message: 'Server error in Google Sign-In' });
   }
 });
+
+/**
+ * Derives a free username from a Google display name.
+ *
+ * Checks the database rather than appending a random number and hoping, so
+ * signup cannot fail on a unique-index collision.
+ */
+async function buildUniqueUsername(seed) {
+  const base =
+    seed
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .slice(0, 20) || 'citizen';
+
+  if (!(await User.exists({ username: base }))) return base;
+
+  for (let suffix = 1; suffix < 1000; suffix++) {
+    const candidate = `${base}${suffix}`;
+    if (!(await User.exists({ username: candidate }))) return candidate;
+  }
+
+  return `${base}${crypto.randomBytes(4).toString('hex')}`;
+}
 
 module.exports = router;

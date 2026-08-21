@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
+
+import 'package:cross_file/cross_file.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -11,8 +12,22 @@ class ApiClient {
   factory ApiClient() => _instance;
   ApiClient._internal();
 
-  String get baseUrl =>
-      dotenv.env['API_BASE_URL'] ?? 'http://localhost:5000/api';
+  /// Where the API lives.
+  ///
+  /// `10.0.2.2` is the Android emulator's alias for the host machine and
+  /// resolves to nothing anywhere else, so it is rewritten for web and desktop
+  /// builds. That lets one `.env.client` serve every target instead of being
+  /// edited per platform.
+  String get baseUrl {
+    final configured = dotenv.env['API_BASE_URL'];
+    if (configured == null || configured.isEmpty) {
+      return 'http://localhost:5000/api';
+    }
+    if (kIsWeb && configured.contains('10.0.2.2')) {
+      return configured.replaceAll('10.0.2.2', 'localhost');
+    }
+    return configured;
+  }
 
   String normalizeUrl(String url) {
     if (url.isEmpty) return url;
@@ -113,11 +128,36 @@ class ApiClient {
     }
   }
 
-  /// Uploads files using multipart request
+  /// Pulls the human-readable message out of a failed response.
+  ///
+  /// The API answers every error with `{ "message": ... }`, but a proxy, a
+  /// rate-limiter or a crash can still put HTML or plain text on the wire.
+  /// Callers used to `jsonDecode` error bodies directly, which turned those
+  /// cases into a FormatException that masked the real failure.
+  String errorMessage(http.Response response, String fallback) {
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map && decoded['message'] != null) {
+        return decoded['message'].toString();
+      }
+    } catch (e) {
+      debugPrint('ApiClient: non-JSON error body (${response.statusCode})');
+    }
+
+    if (response.statusCode == 429) {
+      return 'Too many requests. Wait a few minutes and try again.';
+    }
+    return fallback;
+  }
+
+  /// Uploads files using a multipart request.
+  ///
+  /// Takes [XFile] rather than `dart:io` `File` so the same path works on web,
+  /// where `dart:io` does not exist at all.
   Future<http.Response> uploadMultipart(
     String path, {
     required Map<String, String> fields,
-    required List<File> files,
+    required List<XFile> files,
     required String fileFieldName,
   }) async {
     try {
@@ -133,17 +173,16 @@ class ApiClient {
       // Add fields
       request.fields.addAll(fields);
 
-      // Add files
+      // Add files. Reading bytes rather than streaming keeps this identical on
+      // web, where there is no file handle to stream from.
       for (final file in files) {
-        final stream = http.ByteStream(file.openRead());
-        final length = await file.length();
-        final multipartFile = http.MultipartFile(
-          fileFieldName,
-          stream,
-          length,
-          filename: file.path.split('/').last,
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            fileFieldName,
+            await file.readAsBytes(),
+            filename: file.name,
+          ),
         );
-        request.files.add(multipartFile);
       }
 
       final streamedResponse = await request.send();

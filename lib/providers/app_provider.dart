@@ -10,15 +10,6 @@ import '../services/comment_service.dart';
 import '../services/issue_service.dart';
 import '../services/location_service.dart';
 
-// Extension to get the current user's vote for an issue
-extension IssueVoteExtension on Issue {
-  String? get userVote {
-    // This would come from your API or local state
-    // For now, we'll return null as a placeholder
-    return null;
-  }
-}
-
 class AppProvider with ChangeNotifier {
   final AuthService _authService = AuthService();
   final IssueService _issueService = IssueService();
@@ -48,8 +39,14 @@ class AppProvider with ChangeNotifier {
       // Check if user is already logged in
       await _checkCurrentUser();
 
-      // Get current location if permission granted
-      await _getCurrentLocation();
+      // Location is best-effort during startup. If it fails or times out the
+      // app still opens — it just opens without a position, and the feed
+      // defaults to showing every ward.
+      try {
+        await _getCurrentLocation();
+      } catch (e) {
+        debugPrint('Startup continuing without a location: $e');
+      }
 
       // Load nearby issues if location is available
       if (_currentPosition != null) {
@@ -136,24 +133,30 @@ class AppProvider with ChangeNotifier {
   }
 
   // Issue methods
+
+  /// Files a complaint and refreshes what the app is showing.
+  ///
+  /// Refreshing here is the point: without it a citizen returns from reporting
+  /// to a feed that does not contain the complaint they just filed.
   Future<void> reportIssue({
-    required String title,
-    required String? description,
-    required String imageUrl,
+    required String category,
+    required String description,
+    required List<String> imageUrls,
     required double latitude,
     required double longitude,
+    String? address,
   }) async {
     _setLoading(true);
     try {
       await _issueService.createIssue(
-        title: title,
+        category: category,
         description: description,
-        imageUrl: imageUrl,
+        imageUrls: imageUrls,
         latitude: latitude,
         longitude: longitude,
+        address: address,
       );
 
-      // Refresh issues
       await _loadNearbyIssues();
       if (isAuthenticated) {
         await _loadUserIssues();
@@ -164,7 +167,6 @@ class AppProvider with ChangeNotifier {
       _setLoading(false);
     }
   }
-
 
   // Location methods
   Future<void> refreshLocation() async {
@@ -183,7 +185,7 @@ class AppProvider with ChangeNotifier {
 
   // Helper methods
   Future<void> _checkCurrentUser() async {
-    _currentUser = (await _authService.getCurrentUserProfile()) as UserProfile?;
+    _currentUser = await _authService.getCurrentUserProfile();
     notifyListeners();
   }
 

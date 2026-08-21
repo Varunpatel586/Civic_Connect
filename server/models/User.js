@@ -27,6 +27,12 @@ const UserSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
+  // Wards this officer is answerable for. Empty means every ward, which keeps
+  // existing admin accounts working and makes scoping opt-in.
+  wards: {
+    type: [String],
+    default: [],
+  },
   createdAt: {
     type: Date,
     default: Date.now,
