@@ -3,6 +3,8 @@ const axios = require('axios');
 const path = require('path');
 const sla = require('../config/sla');
 
+const config = require('../config/env');
+
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const CLUSTERING_CATEGORIES = [
   'Potholes & Road Damage', 'Garbage Pile-ups', 'Broken Street Lights',
@@ -15,15 +17,16 @@ exports.createIssue = async (req, res) => {
     const { title, category, description, address, latitude, longitude } = req.body;
     const userId = req.user.id;
     
+    const hostUrl = config.apiUrl;
     let uploadedFile = req.file ? req.file.path : null;
-    let uploadedImageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+    let uploadedImageUrl = req.file ? `${hostUrl}/uploads/${req.file.filename}` : null;
 
     if (!uploadedFile) {
       // Fallback: check if the client sent an already-uploaded imageUrl / imageUrls
       const fallbackUrl = req.body.imageUrl || (req.body.imageUrls && req.body.imageUrls[0]);
       if (fallbackUrl) {
         const filename = path.basename(fallbackUrl);
-        uploadedImageUrl = `/uploads/${filename}`;
+        uploadedImageUrl = `${hostUrl}/uploads/${filename}`;
         // Resolve path to the uploads directory in the server directory
         uploadedFile = path.resolve(__dirname, '../uploads', filename);
       }
@@ -77,7 +80,7 @@ exports.createIssue = async (req, res) => {
                 return path.resolve(__dirname, '../uploads', filename);
               })
             })),
-            similarity_threshold: 0.82
+            min_inliers_threshold: 25
           };
 
           const { data: aiResult } = await axios.post(`${AI_SERVICE_URL}/api/v1/compare`, aiPayload);
