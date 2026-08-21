@@ -54,8 +54,7 @@ class CommentService {
         final Map<String, dynamic> data = jsonDecode(response.body);
         return Comment.fromJson(data);
       } else {
-        final errorData = jsonDecode(response.body);
-        throw Exception(errorData['message'] ?? 'Failed to post comment');
+        throw Exception(_apiClient.errorMessage(response, 'Could not post the comment'));
       }
     } catch (e) {
       debugPrint('Add comment error: $e');
@@ -77,8 +76,7 @@ class CommentService {
         final Map<String, dynamic> data = jsonDecode(response.body);
         return Comment.fromJson(data);
       } else {
-        final errorData = jsonDecode(response.body);
-        throw Exception(errorData['message'] ?? 'Failed to update comment');
+        throw Exception(_apiClient.errorMessage(response, 'Could not update the comment'));
       }
     } catch (e) {
       debugPrint('Update comment error: $e');
@@ -91,8 +89,7 @@ class CommentService {
     try {
       final response = await _apiClient.delete('/comments/$commentId');
       if (response.statusCode != 200) {
-        final errorData = jsonDecode(response.body);
-        throw Exception(errorData['message'] ?? 'Failed to delete comment');
+        throw Exception(_apiClient.errorMessage(response, 'Could not delete the comment'));
       }
     } catch (e) {
       debugPrint('Delete comment error: $e');

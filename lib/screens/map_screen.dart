@@ -1,28 +1,25 @@
-import 'dart:async';
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart' hide ClusterManager, Cluster;
-import 'package:google_maps_cluster_manager_2/google_maps_cluster_manager_2.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import '../models/models.dart';
+import '../models/issue.dart';
 import '../providers/app_provider.dart';
-import '../providers/map_provider.dart';
-import '../widgets/issue_preview_sheet.dart';
+import '../services/issue_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
+import '../theme/app_typography.dart';
+import '../utils/complaint_reference.dart';
+import '../utils/issue_categories.dart';
+import '../utils/sla.dart';
+import '../widgets/status_chip.dart';
+import 'issue_detail_screen.dart';
 
-/// A ClusterItem wrapper around MapIssue so the cluster manager can
-/// extract a LatLng from each issue.
-class MapIssueClusterItem with ClusterItem {
-  final MapIssue issue;
-
-  MapIssueClusterItem(this.issue);
-
-  @override
-  LatLng get location => LatLng(issue.latitude, issue.longitude);
-}
-
+/// Complaints plotted where they were reported.
+///
+/// Uses OpenStreetMap tiles rather than Google Maps: no API key, no billing
+/// account, and nothing to configure before it works — which matters more here
+/// than the marginal difference in tile styling.
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
 
@@ -31,384 +28,488 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  GoogleMapController? _mapController;
-  Timer? _debounceTimer;
-  Set<Marker> _markers = {};
-  late ClusterManager<MapIssueClusterItem> _clusterManager;
-  LatLng? _lastCenteredLocation;
+  /// Bandra West — where the seeded complaints sit, so the map opens on data
+  /// rather than the middle of the ocean when there is no location fix.
+  static const LatLng _fallbackCentre = LatLng(19.0596, 72.8295);
 
-  // Default location: Mountain View, CA (matches seed data)
-  static const _defaultCenter = LatLng(37.4225, -122.084);
+  final IssueService _issueService = IssueService();
+  final MapController _mapController = MapController();
 
-  // Filter state
-  static const _statusOptions = ['Pending', 'In Progress', 'Resolved', 'Rejected'];
-  static const _categoryOptions = [
-    'pothole', 'street_light', 'water', 'electricity',
-    'garbage', 'road', 'drainage', 'other',
-  ];
+  List<Issue> _issues = [];
+  Issue? _selected;
+  bool _isLoading = true;
+  String? _error;
+
+  /// The controller throws if it is driven before [FlutterMap] has attached it,
+  /// so nothing may move the camera until `onMapReady` has fired.
+  bool _isMapReady = false;
 
   @override
   void initState() {
     super.initState();
-    _clusterManager = ClusterManager<MapIssueClusterItem>(
-      [],
-      _updateMarkers,
-      markerBuilder: _markerBuilder,
-      levels: const [1, 4.25, 6.75, 8.25, 11.5, 14.5, 16.0, 16.5, 20.0],
-      extraPercent: 0.2,
-    );
+    _load();
   }
 
-  @override
-  void dispose() {
-    _debounceTimer?.cancel();
-    _mapController?.dispose();
-    super.dispose();
-  }
-
-  // ---------------------------------------------------------------------------
-  // Map Callbacks
-  // ---------------------------------------------------------------------------
-
-  void _onMapCreated(GoogleMapController controller) {
-    _mapController = controller;
-    _clusterManager.setMapId(controller.mapId);
-    _centerOnAvailableLocation();
-    // Initial fetch after map loads
-    _onCameraIdle();
-  }
-
-  void _centerOnAvailableLocation() {
-    final position = context.read<AppProvider>().currentPosition;
-    if (position == null || _mapController == null) return;
-
-    final location = LatLng(position.latitude, position.longitude);
-    if (_lastCenteredLocation == location) return;
-    _lastCenteredLocation = location;
-    _mapController!.animateCamera(CameraUpdate.newLatLngZoom(location, 13));
-  }
-
-  void _onCameraMove(CameraPosition position) {
-    _clusterManager.onCameraMove(position);
-  }
-
-  void _onCameraIdle() {
-    _clusterManager.updateMap();
-
-    // Debounce the API call so we don't fire on every tiny pan
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 400), () async {
-      if (_mapController == null) return;
-      final bounds = await _mapController!.getVisibleRegion();
-      if (!mounted) return;
-      final mapProvider = context.read<MapProvider>();
-      await mapProvider.fetchIssuesInBounds(bounds);
-
-      // Feed updated issues to the cluster manager
-      final items = mapProvider.mapIssues
-          .map((issue) => MapIssueClusterItem(issue))
-          .toList();
-      _clusterManager.setItems(items);
+  Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
     });
-  }
 
-  // ---------------------------------------------------------------------------
-  // Marker Builder
-  // ---------------------------------------------------------------------------
+    try {
+      // Radius is deliberately unbounded: a map that only showed a 5 km circle
+      // would look broken the moment you panned out of it.
+      final issues = await _issueService.getNearbyIssues(
+        latitude: 0,
+        longitude: 0,
+        radiusKm: 20000,
+        limit: 200,
+      );
 
-  void _updateMarkers(Set<Marker> markers) {
-    if (mounted) {
+      if (!mounted) return;
       setState(() {
-        _markers = markers;
+        _issues = issues;
+        _isLoading = false;
+      });
+
+      // On the first load the map does not exist yet; `onMapReady` frames it
+      // instead. On a refresh the map is already up, so frame it now.
+      if (_isMapReady) _fitToComplaints();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not load the complaint map.';
+        _isLoading = false;
       });
     }
   }
 
-  Future<Marker> Function(Cluster<MapIssueClusterItem>) get _markerBuilder =>
-      (Cluster<MapIssueClusterItem> cluster) async {
-        final isCluster = cluster.isMultiple;
+  /// Frames every plotted complaint, so the map never opens somewhere with
+  /// nothing on it.
+  void _fitToComplaints() {
+    if (!_isMapReady) return;
 
-        if (isCluster) {
-          // Cluster marker: circle with count
-          final icon = await _buildClusterIcon(cluster.count);
-          return Marker(
-            markerId: MarkerId(cluster.getId()),
-            position: cluster.location,
-            icon: icon,
-            onTap: () async {
-              showClusterIssueSheet(
-                context,
-                cluster.items.map((item) => item.issue).toList(),
-              );
-            },
-          );
-        } else {
-          // Single issue marker
-          final issue = cluster.items.first.issue;
-          final color = _statusHue(issue.status);
-          return Marker(
-            markerId: MarkerId('issue_${issue.id}'),
-            position: LatLng(issue.latitude, issue.longitude),
-            icon: BitmapDescriptor.defaultMarkerWithHue(color),
-            onTap: () {
-              showIssuePreviewSheet(context, issue);
-            },
-          );
-        }
-      };
+    final points = _issues
+        .where((i) => i.latitude != 0 || i.longitude != 0)
+        .map((i) => LatLng(i.latitude, i.longitude))
+        .toList();
 
-  /// Builds a round cluster icon with the issue count rendered as text.
-  Future<BitmapDescriptor> _buildClusterIcon(int count) async {
-    final size = count < 10 ? 80.0 : (count < 100 ? 95.0 : 110.0);
-    final pictureRecorder = ui.PictureRecorder();
-    final canvas = Canvas(pictureRecorder);
-    final paint = Paint()..color = Colors.green;
+    if (points.isEmpty) return;
 
-    // Outer circle
-    canvas.drawCircle(Offset(size / 2, size / 2), size / 2, paint);
-    // Inner lighter circle
-    paint.color = Colors.green.shade300;
-    canvas.drawCircle(Offset(size / 2, size / 2), size / 2 - 6, paint);
-    // White center
-    paint.color = Colors.white;
-    canvas.drawCircle(Offset(size / 2, size / 2), size / 2 - 12, paint);
-
-    // Count text
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: '$count',
-        style: TextStyle(
-          fontSize: size / 3,
-          color: Colors.green.shade800,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      Offset(
-        size / 2 - textPainter.width / 2,
-        size / 2 - textPainter.height / 2,
-      ),
-    );
-
-    final image = await pictureRecorder.endRecording().toImage(
-      size.toInt(),
-      size.toInt(),
-    );
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-
-    return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
-  }
-
-  /// Maps issue status to a marker hue (matching the color scheme in issue_card.dart).
-  static double _statusHue(String status) {
-    switch (status.toLowerCase()) {
-      case 'resolved':
-        return BitmapDescriptor.hueGreen;
-      case 'in progress':
-        return BitmapDescriptor.hueOrange;
-      case 'rejected':
-        return BitmapDescriptor.hueRed;
-      default: // pending
-        return BitmapDescriptor.hueAzure;
+    if (points.length == 1) {
+      _mapController.move(points.first, 15);
+      return;
     }
+
+    _mapController.fitCamera(
+      CameraFit.coordinates(
+        coordinates: points,
+        padding: const EdgeInsets.all(56),
+        maxZoom: 16,
+      ),
+    );
   }
 
-  // ---------------------------------------------------------------------------
-  // Re-center on user location
-  // ---------------------------------------------------------------------------
-
-  void _goToUserLocation() {
-    final appProvider = context.read<AppProvider>();
-    final position = appProvider.currentPosition;
-    if (position != null && _mapController != null) {
-      _mapController!.animateCamera(
-        CameraUpdate.newLatLngZoom(
-          LatLng(position.latitude, position.longitude),
-          14,
+  void _goToMyLocation() {
+    if (!_isMapReady) return;
+    final position = context.read<AppProvider>().currentPosition;
+    if (position == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Location is off, so you cannot be placed on the map.'),
         ),
       );
+      return;
     }
+    _mapController.move(LatLng(position.latitude, position.longitude), 15);
   }
-
-  // ---------------------------------------------------------------------------
-  // Filter Chips
-  // ---------------------------------------------------------------------------
-
-  Widget _buildFilterBar() {
-    return Consumer<MapProvider>(
-      builder: (context, mapProvider, _) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.95),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                // Status filters
-                ..._statusOptions.map((status) {
-                  final isSelected = mapProvider.selectedStatus == status;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: FilterChip(
-                      label: Text(
-                        status,
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                          color: isSelected ? Colors.white : Colors.grey[700],
-                        ),
-                      ),
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        mapProvider.setFilter(
-                          status: selected ? status : null,
-                          category: mapProvider.selectedCategory,
-                        );
-                        _onCameraIdle(); // re-fetch with new filter
-                      },
-                      selectedColor: Colors.green,
-                      backgroundColor: Colors.grey[100],
-                      checkmarkColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                  );
-                }),
-                // Divider
-                Container(
-                  width: 1,
-                  height: 24,
-                  color: Colors.grey[300],
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                ),
-                // Category filters
-                ..._categoryOptions.map((cat) {
-                  final isSelected = mapProvider.selectedCategory == cat;
-                  final label = cat.replaceAll('_', ' ');
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: FilterChip(
-                      label: Text(
-                        label[0].toUpperCase() + label.substring(1),
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                          color: isSelected ? Colors.white : Colors.grey[700],
-                        ),
-                      ),
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        mapProvider.setFilter(
-                          category: selected ? cat : null,
-                          status: mapProvider.selectedStatus,
-                        );
-                        _onCameraIdle(); // re-fetch with new filter
-                      },
-                      selectedColor: Colors.green,
-                      backgroundColor: Colors.grey[100],
-                      checkmarkColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                  );
-                }),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Build
-  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _centerOnAvailableLocation();
-    });
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-    // Determine initial center from the user's current location
-    final appProvider = context.read<AppProvider>();
-    final position = appProvider.currentPosition;
-    final initialTarget = position != null
-        ? LatLng(position.latitude, position.longitude)
-        : _defaultCenter;
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.map_outlined,
+                size: 36,
+                color: AppColors.slate400,
+              ),
+              const SizedBox(height: 14),
+              Text(_error!, style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 16),
+              OutlinedButton(onPressed: _load, child: const Text('Try again')),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final position = context.select<AppProvider, ({double lat, double lng})?>(
+      (p) => p.currentPosition == null
+          ? null
+          : (
+              lat: p.currentPosition!.latitude,
+              lng: p.currentPosition!.longitude,
+            ),
+    );
 
     return Stack(
       children: [
-        // Google Map
-        GoogleMap(
-          initialCameraPosition: CameraPosition(
-            target: initialTarget,
-            zoom: 13,
-          ),
-          onMapCreated: _onMapCreated,
-          onCameraMove: _onCameraMove,
-          onCameraIdle: _onCameraIdle,
-          markers: _markers,
-          myLocationEnabled: true,
-          myLocationButtonEnabled: false,
-          zoomControlsEnabled: false,
-          mapToolbarEnabled: false,
-        ),
-
-        // Filter bar at top
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: SafeArea(
-            bottom: false,
-            child: _buildFilterBar(),
-          ),
-        ),
-
-        // Loading indicator
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: Consumer<MapProvider>(
-            builder: (context, mapProvider, _) {
-              if (!mapProvider.isLoading) return const SizedBox.shrink();
-              return const LinearProgressIndicator(
-                backgroundColor: Colors.transparent,
-                color: Colors.green,
-              );
+        FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(
+            initialCenter: position == null
+                ? _fallbackCentre
+                : LatLng(position.lat, position.lng),
+            initialZoom: 13,
+            onMapReady: () {
+              _isMapReady = true;
+              _fitToComplaints();
             },
+            onTap: (_, __) => setState(() => _selected = null),
           ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.example.civic_connect',
+              maxZoom: 19,
+              // Tile failures are otherwise silent — the basemap just stays
+              // blank with no clue why.
+              errorTileCallback: (tile, error, stackTrace) {
+                debugPrint('TILE ERROR ${tile.coordinates}: $error');
+              },
+            ),
+            if (position != null)
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: LatLng(position.lat, position.lng),
+                    width: 18,
+                    height: 18,
+                    child: const _YouAreHere(),
+                  ),
+                ],
+              ),
+            MarkerLayer(
+              markers: [
+                for (final issue in _issues)
+                  if (issue.latitude != 0 || issue.longitude != 0)
+                    Marker(
+                      point: LatLng(issue.latitude, issue.longitude),
+                      width: 36,
+                      height: 36,
+                      child: _ComplaintPin(
+                        issue: issue,
+                        selected: _selected?.id == issue.id,
+                        onTap: () => setState(() => _selected = issue),
+                      ),
+                    ),
+              ],
+            ),
+          ],
         ),
-
-        // My location FAB
+        const Positioned(top: 12, left: 12, child: _Legend()),
         Positioned(
-          bottom: 24,
-          right: 16,
-          child: FloatingActionButton.small(
-            heroTag: 'map_locate_btn',
-            onPressed: _goToUserLocation,
-            backgroundColor: Colors.white,
-            child: const Icon(Icons.my_location, color: Colors.green),
+          top: 12,
+          right: 12,
+          child: Column(
+            children: [
+              _MapButton(
+                icon: Icons.my_location_rounded,
+                tooltip: 'Centre on me',
+                onTap: _goToMyLocation,
+              ),
+              const SizedBox(height: 10),
+              _MapButton(
+                icon: Icons.fit_screen_outlined,
+                tooltip: 'Show all complaints',
+                onTap: _fitToComplaints,
+              ),
+            ],
           ),
         ),
+        if (_selected != null)
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 14,
+            child: _SelectedCard(
+              issue: _selected!,
+              onOpen: () => Navigator.of(context)
+                  .push(
+                    MaterialPageRoute(
+                      builder: (_) => IssueDetailScreen(issueId: _selected!.id),
+                    ),
+                  )
+                  .then((_) => _load()),
+              onDismiss: () => setState(() => _selected = null),
+            ),
+          ),
+        // OpenStreetMap's licence requires visible attribution.
+        const Positioned(right: 0, bottom: 0, child: _Attribution()),
       ],
+    );
+  }
+}
+
+/// A complaint on the map, coloured by where it stands.
+class _ComplaintPin extends StatelessWidget {
+  final Issue issue;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ComplaintPin({
+    required this.issue,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final overdue = SlaPolicy.evaluate(issue).isOverdue;
+    final palette = overdue
+        ? StatusColors.overdue
+        : StatusColors.forStatus(issue.status);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: palette.background,
+          border: Border.all(
+            color: palette.foreground,
+            width: selected ? 3 : 2,
+          ),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.navy900.withValues(alpha: 0.25),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Icon(
+          IssueCategories.iconFor(issue.category),
+          size: 17,
+          color: palette.foreground,
+        ),
+      ),
+    );
+  }
+}
+
+class _YouAreHere extends StatelessWidget {
+  const _YouAreHere();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.navy900,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3),
+      ),
+    );
+  }
+}
+
+class _Legend extends StatelessWidget {
+  const _Legend();
+
+  static const _entries = <(String, StatusPalette)>[
+    ('Overdue', StatusColors.overdue),
+    ('Pending', StatusColors.pending),
+    ('In progress', StatusColors.inProgress),
+    ('Resolved', StatusColors.resolved),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        boxShadow: AppTheme.softShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final (label, palette) in _entries)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: palette.background,
+                      border: Border.all(color: palette.foreground, width: 2),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    label,
+                    style: AppTypography.meta(color: AppColors.slate600),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MapButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _MapButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          boxShadow: AppTheme.softShadow,
+        ),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(AppTheme.radius),
+            child: Padding(
+              padding: const EdgeInsets.all(11),
+              child: Icon(icon, size: 19, color: AppColors.navy900),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact summary of the tapped pin.
+class _SelectedCard extends StatelessWidget {
+  final Issue issue;
+  final VoidCallback onOpen;
+  final VoidCallback onDismiss;
+
+  const _SelectedCard({
+    required this.issue,
+    required this.onOpen,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final sla = SlaPolicy.evaluate(issue);
+
+    return DecoratedBox(
+      decoration: AppTheme.cardDecoration,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onOpen,
+          borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              issue.title,
+                              style: Theme.of(context).textTheme.titleSmall,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          StatusChip(
+                            status: issue.status,
+                            overdue: sla.isOverdue,
+                            dense: true,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 7),
+                      Row(
+                        children: [
+                          Text(
+                            ComplaintReference.format(issue),
+                            style: AppTypography.recordId(),
+                          ),
+                          const SizedBox(width: 10),
+                          Flexible(child: SlaLabel(sla: sla)),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        ComplaintReference.locality(issue.address) ??
+                            'Location unrecorded',
+                        style: AppTypography.meta(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  color: AppColors.slate400,
+                  tooltip: 'Dismiss',
+                  onPressed: onDismiss,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Attribution extends StatelessWidget {
+  const _Attribution();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.surface.withValues(alpha: 0.85),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      child: Text(
+        '© OpenStreetMap contributors',
+        style: AppTypography.meta().copyWith(fontSize: 9.5),
+      ),
     );
   }
 }

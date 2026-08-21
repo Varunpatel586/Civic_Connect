@@ -1,15 +1,25 @@
-import 'dart:convert';
-
-import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../services/api_client.dart';
-import '../services/auth_service.dart';
-import '../models/models.dart';
+import 'package:provider/provider.dart';
+
+import '../models/issue.dart';
+import '../providers/app_provider.dart';
+import '../services/issue_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
+import '../utils/issue_categories.dart';
 import '../widgets/issue_card.dart';
 import 'issue_detail_screen.dart';
 
+/// How much of the city the feed is showing.
+enum FeedScope {
+  /// Complaints within [FeedScreen._nearRadiusKm] of the citizen.
+  nearMe,
+
+  /// Everything on the books, wherever it was filed.
+  allWards,
+}
+
+/// The citizen feed: what has been reported, newest first.
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
 
@@ -18,747 +28,409 @@ class FeedScreen extends StatefulWidget {
 }
 
 class _FeedScreenState extends State<FeedScreen> {
-  final ApiClient _apiClient = ApiClient();
-  List<Map<String, dynamic>> _posts = [];
+  static const double _nearRadiusKm = 5;
+
+  /// Wide enough to be effectively unbounded, so "All wards" is one code path
+  /// with "Near me" rather than a second endpoint.
+  static const double _allRadiusKm = 20000;
+
+  final IssueService _issueService = IssueService();
+
+  List<Issue> _issues = [];
   bool _isLoading = true;
+  String? _error;
+
+  /// Starts wide: a citizen opening the app for the first time should see the
+  /// service working, not an empty radius.
+  FeedScope _scope = FeedScope.allWards;
+  String? _category;
 
   @override
   void initState() {
     super.initState();
-    _fetchApprovedPosts();
+    _load();
   }
 
-  // Helper function to generate a consistent UUID v5 from a string
-  String _generateUUIDv5(String input) {
-    // This is a simple implementation for demo purposes
-    // In production, use a proper UUID v5 generator
-    const namespace =
-        '1b671a64-40d5-491e-99b0-da01ff1f3341'; // Randomly generated namespace
-    final bytes = utf8.encode('$namespace$input');
-    final digest = sha1.convert(bytes);
-    final hex = digest.toString();
+  Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
 
-    // Format as UUID
-    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-4${hex.substring(13, 16)}-a${hex.substring(17, 20)}-${hex.substring(20, 32)}';
-  }
-
-  Future<void> _fetchApprovedPosts() async {
-    if (!mounted) return;
-
-    setState(() => _isLoading = true);
+    final position = context.read<AppProvider>().currentPosition;
+    final nearMe = _scope == FeedScope.nearMe && position != null;
 
     try {
-      final response = await _apiClient.get('/issues/nearby?lat=0&lng=0&radius_km=20000');
+      final issues = await _issueService.getNearbyIssues(
+        latitude: nearMe ? position.latitude : 0,
+        longitude: nearMe ? position.longitude : 0,
+        radiusKm: nearMe ? _nearRadiusKm : _allRadiusKm,
+        limit: 100,
+      );
 
-      List<Map<String, dynamic>> posts = [];
-
-      if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
-        debugPrint('FeedScreen loaded ${data.length} posts from server.');
-        if (data.isNotEmpty) {
-          debugPrint('First post data: ${data.first}');
-        }
-        posts = List<Map<String, dynamic>>.from(data);
-      } else {
-        // Add placeholder posts if no posts found
-        // Using consistent UUIDs based on the post title for demo purposes
-        posts = [
-          {
-            'id': _generateUUIDv5('Pothole on Main Street'),
-            'title': 'Pothole on Main Street',
-            'description':
-                'Large pothole causing traffic issues near the intersection of Main and 5th. Needs urgent attention.',
-            'image_url':
-                'https://storage.googleapis.com/kagglesdsdata/datasets/116400/628563/Pothole_Image_Data/1.jpg?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=databundle-worker-v2%40kaggle-161607.iam.gserviceaccount.com%2F20250919%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20250919T053603Z&X-Goog-Expires=345600&X-Goog-SignedHeaders=host&X-Goog-Signature=5140c0693cdc9ab9dca62680835f673a2b10a2838788626a9a59ed011c83e6da07b92f993bfca654a99f274e42ec57dc04c4a0d6fafb67276d7845745dd34cb257c665b81925ed5cf5385efccc4efbe5cb2bfcac8d21f386443fcb7b4891c2981bf723f48c71ff651e04e47018f60c595c93b554ecf20e8a1bd4d782665f532432a50c2ae0924dfbea2b98b7db1e71601b38ebe7511a5ba250117c10588481fc3c33c955bb0b8a616254c37225ad1c892f5d82e131558c742659f1af2c355529283e452071a64b196e4e4085cf1e21276c1e31627bcc73c314bcd98280e4cb69da2b3739f779a01617e7d54077ae95ca49e453701e6c136024ed9f2fdfb28de1',
-            'status': 'approved',
-            'created_at': DateTime.now()
-                .subtract(const Duration(days: 2))
-                .toIso8601String(),
-            'location': 'Main Street, City',
-            'upvotes': 15,
-            'profiles': {'username': 'JohnDoe'},
-            'is_placeholder': true, // Mark as placeholder to handle differently
-          },
-          {
-            'id': _generateUUIDv5('Broken Street Light'),
-            'title': 'Broken Street Light',
-            'description':
-                'Street light not working on Park Avenue. It has been 3 days now.',
-            'image_url':
-                'https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?w=800&auto=format&fit=crop',
-            'status': 'approved',
-            'created_at': DateTime.now()
-                .subtract(const Duration(days: 1))
-                .toIso8601String(),
-            'location': 'Park Avenue, City',
-            'upvotes': 8,
-            'profiles': {'username': 'JaneSmith'},
-            'is_placeholder': true,
-          },
-          {
-            'id': _generateUUIDv5('Garbage Pile-up'),
-            'title': 'Garbage Pile-up',
-            'description':
-                'Garbage not being collected in the downtown area for over a week.',
-            'image_url':
-                'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRyvTN25milJJwSf-8nqAE-VfbkFD2XO--CuA&s',
-            'status': 'approved',
-            'created_at': DateTime.now().toIso8601String(),
-            'location': 'Downtown Area',
-            'upvotes': 23,
-            'profiles': {'username': 'MikeJohnson'},
-            'is_placeholder': true,
-          },
-          {
-            'id': _generateUUIDv5('Damaged Sidewalk'),
-            'title': 'Damaged Sidewalk',
-            'description':
-                'Cracked and uneven sidewalk near the school. Safety hazard for children.',
-            'image_url':
-                'https://images.indianexpress.com/2024/08/pune-footpath.jpeg',
-            'status': 'approved',
-            'created_at': DateTime.now()
-                .subtract(const Duration(hours: 12))
-                .toIso8601String(),
-            'location': 'Near City Elementary School',
-            'upvotes': 12,
-            'profiles': {'username': 'SarahWilliams'},
-            'is_placeholder': true,
-          },
-        ];
-      }
-
-      if (mounted) {
-        setState(() {
-          _posts = posts;
-          _isLoading = false;
-        });
-      }
-    } catch (e, stackTrace) {
-      debugPrint('FeedScreen API fetch failed: $e\n$stackTrace');
-      if (mounted) {
-        setState(() {
-          _posts = [
-            {
-              'id': '1',
-              'title': 'Pothole on Main Street',
-              'description':
-                  'Large pothole causing traffic issues near the intersection of Main and 5th. Needs urgent attention.',
-              'image_url':
-                  'https://images.unsplash.com/photo-1564053489984-317bbd824340?w=800&auto=format&fit=crop',
-              'status': 'approved',
-              'created_at': DateTime.now()
-                  .subtract(const Duration(days: 2))
-                  .toIso8601String(),
-              'location': 'Main Street, City',
-              'upvotes': 15,
-              'profiles': {'username': 'JohnDoe'},
-            },
-            {
-              'id': '2',
-              'title': 'Broken Street Light',
-              'description':
-                  'Street light not working on Park Avenue. It has been 3 days now.',
-              'image_url':
-                  'https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?w=800&auto=format&fit=crop',
-              'status': 'approved',
-              'created_at': DateTime.now()
-                  .subtract(const Duration(days: 1))
-                  .toIso8601String(),
-              'location': 'Park Avenue, City',
-              'upvotes': 8,
-              'profiles': {'username': 'JaneSmith'},
-            },
-            {
-              'id': '3',
-              'title': 'Garbage Pile-up',
-              'description':
-                  'Garbage not being collected in the downtown area for over a week.',
-              'image_url':
-                  'https://images.unsplash.com/photo-1559123692-5d4d4c9536e9?w=800&auto=format&fit=crop',
-              'status': 'approved',
-              'created_at': DateTime.now().toIso8601String(),
-              'location': 'Downtown Area',
-              'upvotes': 23,
-              'profiles': {'username': 'MikeJohnson'},
-            },
-            {
-              'id': '4',
-              'title': 'Damaged Sidewalk',
-              'description':
-                  'Cracked and uneven sidewalk near the school. Safety hazard for children.',
-              'image_url':
-                  'https://images.unsplash.com/photo-1601531452914-51acd275e30d?w=800&auto=format&fit=crop',
-              'status': 'approved',
-              'created_at': DateTime.now()
-                  .subtract(const Duration(hours: 12))
-                  .toIso8601String(),
-              'location': 'Near City Elementary School',
-              'upvotes': 12,
-              'profiles': {'username': 'SarahWilliams'},
-            },
-          ];
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Showing sample posts')));
-      }
+      if (!mounted) return;
+      setState(() {
+        _issues = issues;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not reach the server.';
+        _isLoading = false;
+      });
     }
+  }
+
+  Future<void> _setScope(FeedScope scope) async {
+    if (scope == _scope) return;
+
+    if (scope == FeedScope.nearMe &&
+        context.read<AppProvider>().currentPosition == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Location is off, so nearby complaints cannot be found.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _scope = scope);
+    await _load();
+  }
+
+  List<Issue> get _visible {
+    if (_category == null) return _issues;
+    return _issues.where((issue) => issue.category == _category).toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    return Column(
+      children: [
+        _FeedFilters(
+          scope: _scope,
+          category: _category,
+          onScopeChanged: _setScope,
+          onCategoryChanged: (value) => setState(() => _category = value),
+        ),
+        Expanded(child: _buildList()),
+      ],
+    );
+  }
+
+  Widget _buildList() {
+    if (_isLoading && _issues.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_posts.isEmpty) {
-      return Center(
-        child: Text(
-          'No approved posts yet',
-          style: GoogleFonts.poppins(fontSize: 16),
+    if (_error != null) {
+      return _FeedMessage(
+        icon: Icons.cloud_off_outlined,
+        title: _error!,
+        body: 'Check that the backend is running, then try again.',
+        action: OutlinedButton(
+          onPressed: _load,
+          child: const Text('Try again'),
         ),
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      itemCount: _posts.length,
-      itemBuilder: (context, index) {
-        final post = _posts[index];
-        final issue = Issue.fromJson(post);
-        return IssueCard(
-          issue: issue,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => IssueDetailScreen(issueId: issue.id),
-              ),
-            ).then((_) => _fetchApprovedPosts());
-          },
-          onVote: () => _fetchApprovedPosts(),
-        );
-      },
-    );
-  }
-}
+    final visible = _visible;
 
-class PostDetailsBottomSheet extends StatefulWidget {
-  final Map<String, dynamic> post;
-
-  const PostDetailsBottomSheet({super.key, required this.post});
-
-  @override
-  State<PostDetailsBottomSheet> createState() => _PostDetailsBottomSheetState();
-}
-
-class _PostDetailsBottomSheetState extends State<PostDetailsBottomSheet> {
-  final TextEditingController _commentController = TextEditingController();
-  final ApiClient _apiClient = ApiClient();
-  List<Map<String, dynamic>> _comments = [];
-  bool _isLoadingComments = true;
-
-  late SharedPreferences _prefs;
-  static const String _commentsKey = 'placeholder_comments';
-
-  @override
-  void initState() {
-    super.initState();
-    _initPrefs();
-  }
-
-  Future<void> _initPrefs() async {
-    _prefs = await SharedPreferences.getInstance();
-    await _loadComments();
-  }
-
-  Future<void> _loadComments() async {
-    if (widget.post['is_placeholder'] != true) {
-      await _fetchComments();
-      return;
-    }
-
-    final commentsJson = _prefs.getString(
-      '${_commentsKey}_${widget.post['id']}',
-    );
-    if (commentsJson != null) {
-      try {
-        final List<dynamic> decoded = jsonDecode(commentsJson);
-        if (mounted) {
-          setState(() {
-            _comments = List<Map<String, dynamic>>.from(
-              decoded.map((x) => Map<String, dynamic>.from(x)),
-            );
-            _isLoadingComments = false;
-          });
-        }
-      } catch (e) {
-        debugPrint('Error loading comments from SharedPreferences: $e');
-        _fetchComments();
-      }
-    } else {
-      _fetchComments();
-    }
-  }
-
-  Future<void> _saveComments() async {
-    if (widget.post['is_placeholder'] != true) return;
-
-    try {
-      await _prefs.setString(
-        '${_commentsKey}_${widget.post['id']}',
-        jsonEncode(_comments),
+    if (visible.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          children: [
+            SizedBox(height: MediaQuery.of(context).size.height * 0.12),
+            _FeedMessage(
+              icon: Icons.inbox_outlined,
+              title: _category != null
+                  ? 'No ${IssueCategories.labelFor(_category!).toLowerCase()} complaints'
+                  : _scope == FeedScope.nearMe
+                  ? 'Nothing reported within ${_nearRadiusKm.toInt()} km'
+                  : 'No complaints filed yet',
+              body: _category != null
+                  ? 'Clear the filter to see everything else.'
+                  : 'Be the first — tap the + button to report an issue.',
+            ),
+          ],
+        ),
       );
-    } catch (e) {
-      debugPrint('Error saving comments: $e');
     }
-  }
 
-  Future<void> _fetchComments() async {
-    try {
-      final response = await _apiClient.get('/comments/issue/${widget.post['id']}');
-
-      if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
-        if (mounted) {
-          setState(() {
-            _comments = List<Map<String, dynamic>>.from(data);
-            _isLoadingComments = false;
-          });
-        }
-      } else {
-        throw Exception('Failed to load comments');
-      }
-    } catch (e) {
-      debugPrint('Error fetching comments: $e');
-      if (mounted) {
-        setState(() => _isLoadingComments = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Error loading comments')));
-      }
-    }
-  }
-
-  Future<void> _addComment() async {
-    final commentText = _commentController.text.trim();
-    if (commentText.isEmpty) return;
-
-    try {
-      final user = await AuthService().getCurrentUserProfile();
-      if (user == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Please sign in to comment')),
-          );
-        }
-        return;
-      }
-
-      // Check if this is a placeholder post
-      final isPlaceholder = widget.post['is_placeholder'] == true;
-
-      if (isPlaceholder) {
-        // For placeholder posts, save to SharedPreferences
-        final newComment = {
-          'id': DateTime.now().millisecondsSinceEpoch.toString(),
-          'issue_id': widget.post['id'],
-          'user_id': user.id,
-          'content': commentText,
-          'created_at': DateTime.now().toIso8601String(),
-          'profiles': {
-            'username': user.email.split('@').first,
-            'avatar_url': null,
-          },
-        };
-
-        if (mounted) {
-          setState(() {
-            _comments.insert(0, newComment);
-          });
-          _commentController.clear();
-
-          // Save the updated comments to SharedPreferences
-          await _saveComments();
-
-          // Show success message
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Comment added'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-        return;
-      }
-
-      // For real posts, save to the database
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 96),
+        itemCount: visible.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          final issue = visible[index];
+          return IssueCard(
+            issue: issue,
+            onTap: () => Navigator.of(context)
+                .push(
+                  MaterialPageRoute(
+                    builder: (_) => IssueDetailScreen(issueId: issue.id),
                   ),
-                ),
-                SizedBox(width: 12),
-                Text('Posting comment...'),
-              ],
-            ),
-            duration: Duration(seconds: 5),
-          ),
-        );
-      }
-
-      final response = await _apiClient.post('/comments/issue/${widget.post['id']}', {
-        'content': commentText,
-      });
-
-      if (response.statusCode != 201 && response.statusCode != 200) {
-        throw Exception('Failed to post comment to MongoDB REST');
-      }
-
-      _commentController.clear();
-
-      if (mounted) {
-        await _fetchComments();
-
-        // Show success message
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Comment posted successfully'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('Error adding comment: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Failed to add comment: ${e.toString().split(':').last.trim()}',
-            ),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
+                )
+                .then((_) => _load()),
+            onVote: _load,
+          );
+        },
+      ),
+    );
   }
+}
 
-  String _timeAgo(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
+/// Scope on top, category beneath.
+///
+/// Two axes rather than one combined list: scope answers "where", category
+/// answers "what", and collapsing them would make it impossible to ask for
+/// nearby potholes specifically. Different controls for different jobs — a
+/// segmented switch for the binary, an underlined row for the many.
+class _FeedFilters extends StatelessWidget {
+  final FeedScope scope;
+  final String? category;
+  final ValueChanged<FeedScope> onScopeChanged;
+  final ValueChanged<String?> onCategoryChanged;
 
-    if (difference.inDays > 365) {
-      final years = (difference.inDays / 365).floor();
-      return '$years year${years > 1 ? 's' : ''} ago';
-    } else if (difference.inDays >= 30) {
-      final months = (difference.inDays / 30).floor();
-      return '$months month${months > 1 ? 's' : ''} ago';
-    } else if (difference.inDays >= 1) {
-      return '${difference.inDays} day${difference.inDays > 1 ? 's' : ''} ago';
-    } else if (difference.inHours >= 1) {
-      return '${difference.inHours} hour${difference.inHours > 1 ? 's' : ''} ago';
-    } else if (difference.inMinutes >= 1) {
-      return '${difference.inMinutes} minute${difference.inMinutes > 1 ? 's' : ''} ago';
-    } else {
-      return 'Just now';
-    }
-  }
-
-  @override
-  void dispose() {
-    _commentController.dispose();
-    super.dispose();
-  }
+  const _FeedFilters({
+    required this.scope,
+    required this.category,
+    required this.onScopeChanged,
+    required this.onCategoryChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      initialChildSize: 0.9,
-      minChildSize: 0.5,
-      maxChildSize: 0.9,
-      expand: false,
-      builder: (context, scrollController) {
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).scaffoldBackgroundColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 10,
-                offset: const Offset(0, -2),
-              ),
-            ],
+    return Container(
+      color: AppColors.surface,
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _ScopeSwitch(scope: scope, onChanged: onScopeChanged),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 34,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                _CategoryTab(
+                  label: 'All',
+                  selected: category == null,
+                  onTap: () => onCategoryChanged(null),
+                ),
+                for (final c in IssueCategories.all)
+                  _CategoryTab(
+                    label: c.label,
+                    selected: category == c.value,
+                    onTap: () => onCategoryChanged(c.value),
                   ),
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  padding: EdgeInsets.zero,
-                  children: [
-                    Text(
-                      widget.post['title'] ?? 'No Title',
-                      style: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    if (widget.post['image_url'] != null)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.network(
-                          _apiClient.normalizeUrl(widget.post['image_url'] ?? ''),
-                          height: 200,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => Container(
-                            height: 200,
-                            color: Colors.grey[200],
-                            child: const Center(child: Icon(Icons.broken_image)),
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 16),
-                    Text(
-                      widget.post['description'] ?? '',
-                      style: GoogleFonts.poppins(fontSize: 16),
-                    ),
-                    const SizedBox(height: 16),
-                    const Divider(height: 32, thickness: 1.5),
-                    Row(
-                      children: [
-                        Text(
-                          'Comments',
-                          style: GoogleFonts.poppins(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            _comments.length.toString(),
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.green,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    _isLoadingComments
-                        ? const Center(
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(vertical: 20.0),
-                              child: CircularProgressIndicator(),
-                            ),
-                          )
-                        : _comments.isEmpty
-                            ? Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 20.0),
-                                  child: Text(
-                                    'No comments yet',
-                                    style: GoogleFonts.poppins(color: Colors.grey),
-                                  ),
-                                ),
-                              )
-                            : ListView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                itemCount: _comments.length,
-                                itemBuilder: (context, index) {
-                                  final comment = _comments[index];
-                                  final profile = comment['user'] ?? comment['profiles'] ?? {};
-                                  final createdAt = comment['created_at'] != null
-                                      ? DateTime.parse(comment['created_at'])
-                                      : null;
-                                  final timeAgo = createdAt != null
-                                      ? _timeAgo(createdAt)
-                                      : 'Just now';
-
-                                  return Card(
-                                    margin: const EdgeInsets.only(bottom: 12),
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      side: BorderSide(
-                                        color: Colors.grey.shade200,
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(12),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              CircleAvatar(
-                                                radius: 18,
-                                                backgroundColor: Colors.green,
-                                                child: Text(
-                                                  profile['username']
-                                                          ?.substring(0, 1)
-                                                          .toUpperCase() ??
-                                                      '?',
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      profile['username'] ??
-                                                          'Anonymous',
-                                                      style: GoogleFonts.poppins(
-                                                        fontWeight: FontWeight.w600,
-                                                        fontSize: 14,
-                                                      ),
-                                                    ),
-                                                    Text(
-                                                      timeAgo,
-                                                      style: GoogleFonts.poppins(
-                                                        fontSize: 12,
-                                                        color: Colors.grey[600],
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            comment['content'] ?? '',
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 14,
-                                              height: 1.4,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                margin: const EdgeInsets.only(bottom: 16, top: 8),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: Colors.grey.shade300, width: 1),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _commentController,
-                        maxLines: 4,
-                        minLines: 1,
-                        style: GoogleFonts.poppins(fontSize: 14),
-                        decoration: InputDecoration(
-                          hintText: 'Add a comment...',
-                          hintStyle: GoogleFonts.poppins(
-                            color: Colors.grey[500],
-                            fontSize: 14,
-                          ),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 12,
-                          ),
-                        ),
-                        textInputAction: TextInputAction.send,
-                        onSubmitted: (_) => _addComment(),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.green,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: IconButton(
-                        icon: const Icon(
-                          Icons.send,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                        padding: const EdgeInsets.all(8),
-                        constraints: const BoxConstraints(),
-                        onPressed: () {
-                          FocusScope.of(context).unfocus(); // Dismiss keyboard
-                          _addComment();
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        );
-      },
+        ],
+      ),
+    );
+  }
+}
+
+/// All wards / Near me, as one control rather than two buttons.
+///
+/// A segmented switch states that these are the only two choices and that one
+/// is always active — which two outlined buttons never quite manage to say.
+class _ScopeSwitch extends StatelessWidget {
+  final FeedScope scope;
+  final ValueChanged<FeedScope> onChanged;
+
+  const _ScopeSwitch({required this.scope, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppColors.slate100,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ScopeSegment(
+              label: 'All wards',
+              selected: scope == FeedScope.allWards,
+              onTap: () => onChanged(FeedScope.allWards),
+            ),
+          ),
+          Expanded(
+            child: _ScopeSegment(
+              label: 'Near me',
+              icon: Icons.near_me_rounded,
+              selected: scope == FeedScope.nearMe,
+              onTap: () => onChanged(FeedScope.nearMe),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScopeSegment extends StatelessWidget {
+  final String label;
+  final IconData? icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ScopeSegment({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.surface : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppTheme.radius - 3),
+          boxShadow: selected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x120F1F35),
+                    blurRadius: 3,
+                    offset: Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (icon != null) ...[
+              Icon(
+                icon,
+                size: 14,
+                color: selected ? AppColors.navy900 : AppColors.slate400,
+              ),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              label,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: selected ? AppColors.navy900 : AppColors.slate400,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A category, marked by a rule under the active one rather than a filled pill.
+class _CategoryTab extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _CategoryTab({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: selected ? AppColors.navy900 : AppColors.slate400,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+            const SizedBox(height: 7),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              height: 2,
+              width: selected ? 22 : 0,
+              decoration: BoxDecoration(
+                color: AppColors.navy900,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Empty and error states. Both say what happened and what to do next.
+class _FeedMessage extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String body;
+  final Widget? action;
+
+  const _FeedMessage({
+    required this.icon,
+    required this.title,
+    required this.body,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(30),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 38, color: AppColors.slate400),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 7),
+            Text(
+              body,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            if (action != null) ...[const SizedBox(height: 20), action!],
+          ],
+        ),
+      ),
     );
   }
 }
