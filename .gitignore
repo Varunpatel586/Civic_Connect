@@ -1,0 +1,112 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# Android Studio/IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Flutter/Dart
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# iOS
+/ios/**/Pods/
+/ios/**/Flutter/flutter_export_environment.sh
+/ios/**/Flutter/Flutter.podspec
+/ios/**/Flutter/Flutter.framework/
+/ios/**/Flutter/Flutter.podspec
+/ios/**/Flutter/App.framework/
+/ios/**/Flutter/Debug.xcconfig
+/ios/**/Flutter/Release.xcconfig
+/ios/**/Flutter/Generated.xcconfig
+/ios/**/Flutter/app.flx
+/ios/**/Flutter/app.zip
+/ios/**/Flutter/flutter_assets/
+/ios/**/Flutter/flutter_export_environment.sh
+/ios/**/ServiceDefinitions.json
+/ios/**/Runner.entitlements
+/ios/**/Runner.xcworkspace/contents.xcworkspacedata
+/ios/**/Runner.xcodeproj/project.xcworkspace/
+/ios/**/Runner.xcodeproj/xcuserdata/
+
+# Web
+.webpack/
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+server/node_modules

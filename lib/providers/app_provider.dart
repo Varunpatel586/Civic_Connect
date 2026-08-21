@@ -1,0 +1,376 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+
+import '../models/models.dart' show UserProfile, Issue, Comment;
+import '../services/auth_service.dart';
+import '../services/comment_service.dart';
+import '../services/issue_service.dart';
+import '../services/location_service.dart';
+
+// Extension to get the current user's vote for an issue
+extension IssueVoteExtension on Issue {
+  String? get userVote {
+    // This would come from your API or local state
+    // For now, we'll return null as a placeholder
+    return null;
+  }
+}
+
+class AppProvider with ChangeNotifier {
+  final AuthService _authService = AuthService();
+  final IssueService _issueService = IssueService();
+  final LocationService _locationService = LocationService();
+
+  UserProfile? _currentUser;
+  bool _isLoading = false;
+  Position? _currentPosition;
+  String? _currentAddress;
+  List<Issue> _nearbyIssues = [];
+  List<Issue> _userIssues = [];
+
+  // Getters
+  UserProfile? get currentUser => _currentUser;
+  bool get isLoading => _isLoading;
+  bool get isAuthenticated => _currentUser != null;
+  bool get isAdmin => _currentUser?.role.toLowerCase() == 'admin';
+  Position? get currentPosition => _currentPosition;
+  String? get currentAddress => _currentAddress;
+  List<Issue> get nearbyIssues => _nearbyIssues;
+  List<Issue> get userIssues => _userIssues;
+
+  // Initialize app state
+  Future<void> initialize() async {
+    _setLoading(true);
+    try {
+      // Check if user is already logged in
+      await _checkCurrentUser();
+
+      // Get current location if permission granted
+      await _getCurrentLocation();
+
+      // Load nearby issues if location is available
+      if (_currentPosition != null) {
+        await _loadNearbyIssues();
+      }
+
+      // Load user's issues if authenticated
+      if (isAuthenticated) {
+        await _loadUserIssues();
+      }
+    } catch (e) {
+      debugPrint('Error initializing app: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // Authentication methods
+  Future<UserProfile?> signIn(String email, String password) async {
+    _setLoading(true);
+    try {
+      await _authService.signInWithEmail(email: email, password: password);
+      await _checkCurrentUser();
+      if (isAuthenticated) {
+        await _loadUserIssues();
+      }
+      return _currentUser;
+    } catch (e) {
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<UserProfile?> signUp(
+    String email,
+    String password,
+    String username,
+  ) async {
+    _setLoading(true);
+    try {
+      await _authService.signUpWithEmail(
+        email: email,
+        password: password,
+        username: username,
+      );
+      await _checkCurrentUser();
+      return _currentUser;
+    } catch (e) {
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<UserProfile?> signInWithGoogle() async {
+    _setLoading(true);
+    try {
+      await _authService.signInWithGoogle();
+      await _checkCurrentUser();
+      if (isAuthenticated) {
+        await _loadUserIssues();
+      }
+      return _currentUser;
+    } catch (e) {
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<void> signOut() async {
+    _setLoading(true);
+    try {
+      await _authService.signOut();
+      _currentUser = null;
+      _userIssues = [];
+      notifyListeners();
+    } catch (e) {
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // Issue methods
+  Future<void> reportIssue({
+    required String title,
+    required String? description,
+    required String imageUrl,
+    required double latitude,
+    required double longitude,
+  }) async {
+    _setLoading(true);
+    try {
+      await _issueService.createIssue(
+        title: title,
+        description: description,
+        imageUrl: imageUrl,
+        latitude: latitude,
+        longitude: longitude,
+      );
+
+      // Refresh issues
+      await _loadNearbyIssues();
+      if (isAuthenticated) {
+        await _loadUserIssues();
+      }
+    } catch (e) {
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+
+  // Location methods
+  Future<void> refreshLocation() async {
+    _setLoading(true);
+    try {
+      await _getCurrentLocation();
+      if (_currentPosition != null) {
+        await _loadNearbyIssues();
+      }
+    } catch (e) {
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // Helper methods
+  Future<void> _checkCurrentUser() async {
+    _currentUser = (await _authService.getCurrentUserProfile()) as UserProfile?;
+    notifyListeners();
+  }
+
+  Future<void> _getCurrentLocation() async {
+    try {
+      final position = await _locationService.getCurrentPosition();
+      _currentPosition = position;
+
+      // Get address from coordinates
+      _currentAddress = await _locationService.getAddressFromLatLng(
+        position.latitude,
+        position.longitude,
+      );
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error getting current location: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _loadNearbyIssues() async {
+    if (_currentPosition == null) return;
+
+    try {
+      _nearbyIssues = await _issueService.getNearbyIssues(
+        latitude: _currentPosition!.latitude,
+        longitude: _currentPosition!.longitude,
+      );
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading nearby issues: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _loadUserIssues() async {
+    if (_currentUser == null) return;
+
+    try {
+      _userIssues = await _issueService.getUserIssues(_currentUser!.id);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading user issues: $e');
+      rethrow;
+    }
+  }
+
+  // Get issue by ID
+  Future<Issue> getIssueById(String issueId) async {
+    try {
+      final response = await _issueService.getIssueById(issueId);
+      if (response == null) {
+        throw Exception('Issue not found');
+      }
+      return response;
+    } catch (e) {
+      debugPrint('Error getting issue: $e');
+      rethrow;
+    }
+  }
+
+  // Get comments for an issue
+  Future<List<Comment>> getIssueComments(String issueId) async {
+    try {
+      return await _issueService.getIssueComments(issueId);
+    } catch (e) {
+      debugPrint('Error getting comments: $e');
+      rethrow;
+    }
+  }
+
+  // Vote on an issue
+  Future<void> voteOnIssue(String issueId, bool isAgree) async {
+    if (_currentUser == null) {
+      throw Exception('User not authenticated');
+    }
+
+    try {
+      await _issueService.voteOnIssue(
+        issueId: issueId,
+        userId: _currentUser!.id,
+        isAgree: isAgree,
+      );
+      await _loadIssueWithComments(issueId);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error voting on issue: $e');
+      rethrow;
+    }
+  }
+
+  // Update issue status (admin only)
+  Future<void> updateIssueStatus({
+    required String issueId,
+    required String status,
+  }) async {
+    try {
+      await _issueService.updateIssueStatus(issueId: issueId, status: status);
+      await _loadIssueWithComments(issueId);
+    } catch (e) {
+      debugPrint('Error updating issue status: $e');
+      rethrow;
+    }
+  }
+
+  // Map to store comments for each issue
+  final Map<String, List<Comment>> _issueComments = {};
+
+  /// Get comments for a specific issue
+  List<Comment> getCommentsForIssue(String issueId) {
+    return _issueComments[issueId] ?? [];
+  }
+
+  /// Load or refresh comments for a specific issue
+  Future<void> loadCommentsForIssue(String issueId) async {
+    try {
+      _setLoading(true);
+      final comments = await _issueService.getIssueComments(issueId);
+      _issueComments[issueId] = comments;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading comments: $e');
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Add a comment to an issue
+  Future<void> addComment(String issueId, String content) async {
+    try {
+      _setLoading(true);
+      final commentService = CommentService();
+      await commentService.addComment(issueId: issueId, content: content);
+      
+      // Refresh the comments for this issue
+      await loadCommentsForIssue(issueId);
+      
+      // Also refresh the issue to update comment count if needed
+      await _loadIssueWithComments(issueId);
+    } catch (e) {
+      debugPrint('Error adding comment: $e');
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<void> _loadIssueWithComments(String issueId) async {
+    try {
+      _setLoading(true);
+      
+      // Update in nearby issues
+      final index = _nearbyIssues.indexWhere((issue) => issue.id == issueId);
+      if (index != -1) {
+        final updatedIssue = await _issueService.getIssueById(issueId);
+        if (updatedIssue != null) {
+          _nearbyIssues[index] = updatedIssue;
+        }
+      }
+
+      // Update in user issues
+      final userIssueIndex = _userIssues.indexWhere(
+        (issue) => issue.id == issueId,
+      );
+      if (userIssueIndex != -1) {
+        final updatedIssue = await _issueService.getIssueById(issueId);
+        if (updatedIssue != null) {
+          _userIssues[userIssueIndex] = updatedIssue;
+        }
+      }
+      
+      // Refresh comments for this issue
+      await loadCommentsForIssue(issueId);
+      
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error updating issue with comments: $e');
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  void _setLoading(bool isLoading) {
+    _isLoading = isLoading;
+    notifyListeners();
+  }
+}
