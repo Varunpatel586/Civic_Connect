@@ -80,7 +80,8 @@ Located in [map_screen.dart](../lib/screens/map_screen.dart).
 - **Purpose**: Complaints plotted where they were reported.
 - **Features**:
   - OpenStreetMap tiles via `flutter_map` — no API key, no billing account, nothing to configure before it works.
-  - `_ComplaintPin` colours each pin by state (overdue wins over the stored status); `_YouAreHere` marks the citizen.
+  - Camera starts centered on the user's mock location (zoom level 15) to prevent starting at a zoomed-out global view, only fitting to all complaints as a fallback if the user location is unavailable.
+  - `_ComplaintPin` displays custom teardrop pins pointing down at the coordinates, rendering actual photo thumbnails (using `CachedNetworkImage` with custom status borders) or category icons as placeholders. Pins are color-coded based on status/overdue SLA.
   - Floating chrome that lifts off the map with shadow rather than borders: `_Legend`, `_MapButton` (centre on me / fit all complaints), and `_SelectedCard` for the tapped pin.
   - `_Attribution` is required by the OpenStreetMap licence — do not remove it.
   - Camera moves are gated on `onMapReady`; the controller throws if driven before `FlutterMap` attaches it.
