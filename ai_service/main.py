@@ -125,23 +125,89 @@ from PIL import Image
 from transformers import pipeline
 from fastapi import UploadFile, File
 
-classifier = None
+# --- Classification -------------------------------------------------------
+#
+# Zero-shot CLIP scores the image against a fixed list of text prompts and
+# softmaxes across them. That carries one consequence worth stating plainly:
+# the model can only answer "which of these labels fits best", never "none of
+# them". With civic labels alone, a photo of a wall, a face, or pure noise came
+# back as a confident street light — random noise measured 0.86 before the
+# distractor prompts below existed.
+#
+# So the candidate list deliberately carries non-civic prompts. If one of them
+# wins, the photo is rejected instead of filed. They are never returned as a
+# category; they exist only to give the softmax somewhere else to go.
 
-@app.on_event("startup")
-def load_models():
-    global classifier
-    classifier = pipeline(
-        "zero-shot-image-classification",
-        model="openai/clip-vit-base-patch32"
-    )
-
-PROMPT_MAP = {
-    "a photo looking down at a pothole, deep road crater, or asphalt damage": "pothole",
+CIVIC_PROMPTS = {
+    "a close-up photo of a pothole, a deep hole or crater in the road surface, often filled with muddy water": "pothole",
     "a photo looking up at an outdoor street lamp post, light pole, or dark municipal lantern": "street_light",
     "a photo showing a large pile of garbage, overflowing trash dump, or roadside waste": "garbage",
     "a photo showing flowing water leak, burst pipe flooding, or water supply disruption": "water",
-    "a photo showing a clogged drainage ditch, open sewer manhole, or dirty wastewater": "drainage"
+    "a photo showing a clogged drainage ditch, open sewer manhole, or dirty wastewater": "drainage",
+    # The pothole and road prompts are deliberately worded to exclude each
+    # other: "deep hole" against "with no deep hole". Their first drafts both
+    # mentioned broken road surfaces, and every real pothole photo in
+    # server/uploads/ was then classified as road. Separating them moved those
+    # three from wrong to correct at 0.84-0.98 confidence.
+    # Both of these are already in the complaint taxonomy but were missing
+    # here, so an electrical hazard was forced into whichever of the other five
+    # happened to score highest.
+    "a photo of damaged electrical wiring, a fallen power line, or an exposed electrical box": "electricity",
+    "a photo of a cracked or uneven road surface or a damaged footpath, with no deep hole": "road",
 }
+
+DISTRACTOR_PROMPTS = [
+    "a close-up photo of a person, a selfie, or a portrait",
+    "a photo taken indoors of a room, furniture, or a wall",
+    "a photo of food, a meal, or a drink",
+    "a screenshot, a document, or a page of text",
+    "a photo of an animal or a pet",
+    "a blurry, dark, or meaningless photograph of nothing in particular",
+    "a photo of plain sky, a plain wall, or an empty surface",
+]
+
+CANDIDATE_LABELS = list(CIVIC_PROMPTS.keys()) + DISTRACTOR_PROMPTS
+
+# Below this the winning label is not clearly ahead of its alternatives, and
+# the citizen should pick the category themselves.
+CONFIDENCE_FLOOR = 0.38
+
+# Laplacian variance scales with resolution, so a 12 MP phone photo and a
+# downscaled copy of the same scene score very differently. Measuring at a
+# fixed width first is what makes a single threshold meaningful.
+BLUR_WORK_WIDTH = 640
+BLUR_FLOOR = 85.0
+
+classifier = None
+classifier_error = None
+
+
+@app.on_event("startup")
+def load_models():
+    """Warms CLIP once, so the first citizen to file a complaint does not pay
+    for the weights loading."""
+    global classifier, classifier_error
+    try:
+        classifier = pipeline(
+            "zero-shot-image-classification",
+            model="openai/clip-vit-base-patch32",
+        )
+    except Exception as exc:
+        # A failed load must not take the service down: the duplicate matcher
+        # above is pure OpenCV and stays useful without CLIP.
+        classifier_error = str(exc)
+        print(f"[ai] classifier unavailable: {exc}")
+
+
+def blur_variance_of(cv_img) -> float:
+    """Focus measure, normalised for resolution."""
+    gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
+    height, width = gray.shape[:2]
+    if width > BLUR_WORK_WIDTH:
+        scale = BLUR_WORK_WIDTH / float(width)
+        gray = cv2.resize(gray, (BLUR_WORK_WIDTH, max(1, int(height * scale))))
+    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
 
 class ClassificationResult(BaseModel):
     category: str
@@ -149,35 +215,73 @@ class ClassificationResult(BaseModel):
     is_confident: bool
     blur_score: float
     is_blurry: bool
+    # Added rather than renamed: the Flutter client reads the four fields above
+    # and keeps working untouched.
+    is_civic: bool = True
+    reason: str = ""
+
 
 @app.post("/api/v1/classify", response_model=ClassificationResult)
 async def classify_and_check_quality(file: UploadFile = File(...)):
+    if classifier is None:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Classifier unavailable: {classifier_error or 'still starting'}",
+        )
+
     try:
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
         cv_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
+
         if cv_img is None:
             raise HTTPException(status_code=400, detail="Invalid image file.")
 
-        gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
-        blur_variance = cv2.Laplacian(gray, cv2.CV_64F).var()
-        is_blurry = blur_variance < 85.0 
+        blur_score = blur_variance_of(cv_img)
+        is_blurry = blur_score < BLUR_FLOOR
 
         pil_img = Image.open(io.BytesIO(contents)).convert("RGB")
-        predictions = classifier(pil_img, candidate_labels=list(PROMPT_MAP.keys()))
+        predictions = classifier(pil_img, candidate_labels=CANDIDATE_LABELS)
         top_match = predictions[0]
-
-        category = PROMPT_MAP.get(top_match["label"], "Other")
         confidence = round(float(top_match["score"]), 4)
 
+        category = CIVIC_PROMPTS.get(top_match["label"])
+
+        if category is None:
+            # A distractor won. Fall back to the taxonomy's own catch-all so
+            # the value is always one the complaint schema will accept.
+            return ClassificationResult(
+                category="other",
+                confidence=confidence,
+                is_confident=False,
+                blur_score=round(blur_score, 2),
+                is_blurry=is_blurry,
+                is_civic=False,
+                reason="This does not look like a civic issue. Pick a category yourself if it is one.",
+            )
+
+        confident = confidence >= CONFIDENCE_FLOOR and not is_blurry
         return ClassificationResult(
             category=category,
             confidence=confidence,
-            is_confident=confidence >= 0.38 and not is_blurry,
-            blur_score=round(blur_variance, 2),
-            is_blurry=is_blurry
+            is_confident=confident,
+            blur_score=round(blur_score, 2),
+            is_blurry=is_blurry,
+            is_civic=True,
+            reason=(
+                ""
+                if confident
+                else (
+                    "Photo is too blurry to read"
+                    if is_blurry
+                    else "Not sure what this shows — please confirm the category"
+                )
+            ),
         )
+    # Re-raised before the catch-all, which previously turned the 400 above
+    # into a 500.
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

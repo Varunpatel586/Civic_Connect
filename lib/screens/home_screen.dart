@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/app_provider.dart';
 import '../services/auth_service.dart';
+import '../services/notification_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../utils/complaint_reference.dart';
@@ -10,6 +11,7 @@ import 'admin_console_screen.dart';
 import 'camera_screen.dart';
 import 'feed_screen.dart';
 import 'map_screen.dart';
+import 'notification_inbox_screen.dart';
 import 'profile_screen.dart';
 
 /// The citizen shell: complaints, map, and profile, with reporting on the
@@ -152,6 +154,7 @@ class _HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
         ],
       ),
       actions: [
+        const _InboxButton(),
         // Only municipal officers see a way in; the server enforces the same
         // rule, so hiding it here is convenience rather than security.
         if (isAdmin)
@@ -172,6 +175,89 @@ class _HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Way into the inbox, with the unread count on it.
+///
+/// Stateful only because the count is fetched: the app bar around it stays
+/// stateless. A failed fetch shows a plain bell rather than an error — a badge
+/// is never worth breaking the shell over.
+class _InboxButton extends StatefulWidget {
+  const _InboxButton();
+
+  @override
+  State<_InboxButton> createState() => _InboxButtonState();
+}
+
+class _InboxButtonState extends State<_InboxButton> {
+  final NotificationService _service = NotificationService();
+  int _unread = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final count = await _service.getUnreadCount();
+    if (mounted) setState(() => _unread = count);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 10),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.notifications_none_rounded, size: 21),
+            tooltip: 'Notifications',
+            style: IconButton.styleFrom(
+              backgroundColor: AppColors.canvas,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppTheme.radius),
+              ),
+            ),
+            onPressed: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const NotificationInboxScreen(),
+                ),
+              );
+              // Anything read while in there should drop off the badge.
+              _refresh();
+            },
+          ),
+          if (_unread > 0)
+            Positioned(
+              top: -1,
+              right: -1,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                constraints: const BoxConstraints(minWidth: 17),
+                decoration: BoxDecoration(
+                  color: StatusColors.rejected.foreground,
+                  borderRadius: BorderRadius.circular(AppTheme.badgeRadius),
+                  border: Border.all(color: AppColors.surface, width: 1.5),
+                ),
+                child: Text(
+                  _unread > 99 ? '99+' : '$_unread',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    height: 1.4,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +11,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_typography.dart';
 import '../utils/issue_categories.dart';
+import '../widgets/local_photo.dart';
 
 /// Files a new complaint: evidence, classification, description, location.
 ///
@@ -502,7 +502,7 @@ class _EvidenceStrip extends StatelessWidget {
       children: [
         AspectRatio(
           aspectRatio: 4 / 3,
-          child: _Photo(file: initialImage, fit: BoxFit.cover),
+          child: LocalPhoto(file: initialImage, fit: BoxFit.cover),
         ),
         const SizedBox(height: 14),
         SizedBox(
@@ -521,7 +521,7 @@ class _EvidenceStrip extends StatelessWidget {
                         child: SizedBox(
                           width: 72,
                           height: 72,
-                          child: _Photo(file: additional[i], fit: BoxFit.cover),
+                          child: LocalPhoto(file: additional[i], fit: BoxFit.cover),
                         ),
                       ),
                       Positioned(
@@ -735,40 +735,6 @@ class _LocationCard extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// Renders a captured or picked photograph on any platform.
-///
-/// `Image.file` needs a `dart:io` handle, which web does not have. Reading the
-/// bytes works everywhere and is cheap here — these are single previews, not a
-/// scrolling gallery.
-class _Photo extends StatelessWidget {
-  final XFile file;
-  final BoxFit fit;
-
-  const _Photo({required this.file, required this.fit});
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<Uint8List>(
-      future: file.readAsBytes(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Container(
-            color: AppColors.slate100,
-            child: const Icon(
-              Icons.broken_image_outlined,
-              color: AppColors.slate400,
-            ),
-          );
-        }
-        if (!snapshot.hasData) {
-          return Container(color: AppColors.slate100);
-        }
-        return Image.memory(snapshot.data!, fit: fit);
-      },
     );
   }
 }
