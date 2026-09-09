@@ -1,6 +1,10 @@
+# Python virtual environment
+venv/
+.venv/
 
-# Uploaded images (stored in MongoDB)
-server/uploads/
+# Bytecode
+__pycache__/
+*.py[cod]
 
-# Uploaded images (stored in MongoDB)
-server/uploads/
+# Local model cache
+.cache/

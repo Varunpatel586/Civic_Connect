@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../models/issue.dart';
 import '../models/ward_stats.dart';
@@ -9,6 +10,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_typography.dart';
 import '../utils/complaint_reference.dart';
+import '../widgets/local_photo.dart';
 import '../utils/issue_categories.dart';
 import '../utils/sla.dart';
 import '../widgets/status_chip.dart';
@@ -93,10 +95,22 @@ class _AdminConsoleScreenState extends State<AdminConsoleScreen> {
 
     final messenger = ScaffoldMessenger.of(context);
     try {
+      // Uploaded first: a status change that lands without its photo would
+      // be rejected by the server anyway, and this way nothing is written
+      // until the evidence is safely stored.
+      var photoUrl = '';
+      if (result.photo != null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Uploading photo of the work...')),
+        );
+        photoUrl = await _adminService.uploadProofPhoto(result.photo!);
+      }
+
       await _adminService.updateStatus(
         issueId: issue.id,
         status: result.status,
         note: result.note,
+        photoUrl: photoUrl,
       );
       messenger.showSnackBar(
         SnackBar(content: Text('${issue.title} marked ${result.status}.')),
@@ -605,7 +619,11 @@ class _StatusChange {
   final String status;
   final String note;
 
-  const _StatusChange(this.status, this.note);
+  /// Photograph of the completed work. Uploaded by the caller before the
+  /// status is sent, because the server refuses Resolved without one.
+  final XFile? photo;
+
+  const _StatusChange(this.status, this.note, {this.photo});
 }
 
 /// Move a complaint to a new state, with an optional note for the record.
@@ -623,6 +641,18 @@ class _StatusSheetState extends State<_StatusSheet> {
 
   final _noteController = TextEditingController();
   late String _selected = widget.issue.status;
+  XFile? _photo;
+
+  bool get _needsProof => _selected == 'Resolved';
+
+  Future<void> _pickProof(ImageSource source) async {
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      imageQuality: 80,
+      maxWidth: 1600,
+    );
+    if (picked != null && mounted) setState(() => _photo = picked);
+  }
 
   @override
   void dispose() {
@@ -682,6 +712,14 @@ class _StatusSheetState extends State<_StatusSheet> {
                   hintText: 'Note for the record (optional)',
                 ),
               ),
+              if (_needsProof) ...[
+                const SizedBox(height: 16),
+                _ProofPhotoField(
+                  photo: _photo,
+                  onPick: _pickProof,
+                  onClear: () => setState(() => _photo = null),
+                ),
+              ],
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -694,10 +732,16 @@ class _StatusSheetState extends State<_StatusSheet> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: _selected == widget.issue.status
+                      onPressed:
+                          _selected == widget.issue.status ||
+                              (_needsProof && _photo == null)
                           ? null
                           : () => Navigator.of(context).pop(
-                              _StatusChange(_selected, _noteController.text),
+                              _StatusChange(
+                                _selected,
+                                _noteController.text,
+                                photo: _photo,
+                              ),
                             ),
                       child: const Text('Update'),
                     ),
@@ -764,6 +808,94 @@ class _ConsoleError extends StatelessWidget {
             OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The officer's photograph of the completed work.
+///
+/// Mandatory for Resolved, which is why the Update button stays disabled until
+/// there is one. The citizen is about to be asked whether the fix is real; the
+/// question is close to meaningless if all they have to judge is a text note.
+class _ProofPhotoField extends StatelessWidget {
+  final XFile? photo;
+  final ValueChanged<ImageSource> onPick;
+  final VoidCallback onClear;
+
+  const _ProofPhotoField({
+    required this.photo,
+    required this.onPick,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = StatusColors.resolved;
+
+    if (photo != null) {
+      return Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppTheme.radius),
+            child: SizedBox(
+              width: 64,
+              height: 64,
+              child: LocalPhoto(file: photo!),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Proof of work attached',
+              style: AppTypography.meta(color: palette.foreground),
+            ),
+          ),
+          TextButton(onPressed: onClear, child: const Text('Replace')),
+        ],
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.canvas,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(color: AppColors.slate200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Photo of the completed work',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Required. The reporter is shown this beside their original photo.',
+            style: AppTypography.meta(),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => onPick(ImageSource.camera),
+                  icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                  label: const Text('Camera'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => onPick(ImageSource.gallery),
+                  icon: const Icon(Icons.photo_library_outlined, size: 18),
+                  label: const Text('Gallery'),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

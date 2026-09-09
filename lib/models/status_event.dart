@@ -10,10 +10,15 @@ class StatusEvent {
   /// Optional free text an officer attached to the change.
   final String note;
 
+  /// Photograph of the completed work, present on Resolved entries.
+  /// The server requires one before it will accept that status.
+  final String photoUrl;
+
   StatusEvent({
     required this.status,
     required this.changedAt,
     this.note = '',
+    this.photoUrl = '',
   });
 
   factory StatusEvent.fromJson(Map<String, dynamic> json) {
@@ -23,6 +28,7 @@ class StatusEvent {
           ? DateTime.parse(json['changed_at'].toString())
           : DateTime.now(),
       note: json['note']?.toString() ?? '',
+      photoUrl: json['photo_url']?.toString() ?? '',
     );
   }
 
@@ -30,5 +36,6 @@ class StatusEvent {
     'status': status,
     'changed_at': changedAt.toIso8601String(),
     'note': note,
+    'photo_url': photoUrl,
   };
 }
