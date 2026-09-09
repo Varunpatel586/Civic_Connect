@@ -3,3 +3,7 @@ uvicorn
 pydantic
 opencv-python
 numpy
+transformers
+torch
+Pillow
+python-multipart

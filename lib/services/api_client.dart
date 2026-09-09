@@ -5,6 +5,7 @@ import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiClient {
@@ -183,11 +184,13 @@ class ApiClient {
       // Add files. Reading bytes rather than streaming keeps this identical on
       // web, where there is no file handle to stream from.
       for (final file in files) {
+        final filename = file.name.contains('.') ? file.name : '${file.name}.jpg';
         request.files.add(
           http.MultipartFile.fromBytes(
             fileFieldName,
             await file.readAsBytes(),
-            filename: file.name,
+            filename: filename,
+            contentType: MediaType('image', 'jpeg'),
           ),
         );
       }
@@ -201,4 +204,46 @@ class ApiClient {
       rethrow;
     }
   }
+
+  Future<Map<String, dynamic>> classifyImage(XFile image) async {
+    final response = await uploadMultipart(
+      '/issues/classify',
+      fields: const {},
+      files: [image],
+      fileFieldName: 'photo',
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+    throw Exception('Classification failed (${response.statusCode})');
+  }
+
+  Future<List<dynamic>> getNearbyCandidates(double lat, double lng, String category) async {
+    final uri = Uri.parse('$baseUrl/issues/nearby-candidates?lat=$lat&lng=$lng&category=$category');
+    final response = await http.get(uri, headers: {
+      if (await token != null) 'Authorization': 'Bearer ${await token}'
+    }).timeout(_requestTimeout);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as List<dynamic>;
+    }
+    return [];
+  }
+
+  Future<void> attachEvidence(String issueId, List<String> imageUrls) async {
+    final uri = Uri.parse('$baseUrl/issues/$issueId/attach-evidence');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        if (await token != null) 'Authorization': 'Bearer ${await token}'
+      },
+      body: jsonEncode({'imageUrls': imageUrls}),
+    ).timeout(_requestTimeout);
+
+    if (response.statusCode != 200) {
+      throw Exception('Attach evidence failed (${response.statusCode})');
+    }
+  }
+
 }
