@@ -326,14 +326,41 @@ router.get('/queue', auth, admin, async (req, res) => {
       .lean();
 
     const now = new Date();
-
-    // Triage order: what is late, then what the most people are waiting on,
-    // then what has been waiting longest.
+    
+    // Triage order: Dynamic Priority Score P
     const ranked = issues
-      .map((issue) => ({ ...issue, overdue: sla.isOverdue(issue, now) }))
+      .map((issue) => {
+        const N = issue.reportCount || 1;
+        const Va = issue.agreeCount || 0;
+        const Vd = issue.disagreeCount || 0;
+        const Sai = issue.severityScore || 2; // Default if not analyzed
+        
+        // SLA timing calculation
+        const createdAt = issue.createdAt ? new Date(issue.createdAt).getTime() : now.getTime();
+        const dueAt = sla.dueDate(issue).getTime();
+        const TSlaTotal = dueAt - createdAt;
+        const TRemaining = dueAt - now.getTime();
+        
+        // Decay factor in [0, 1]
+        let timeFactor = 0;
+        if (TSlaTotal > 0) {
+          timeFactor = Math.max(0, (TSlaTotal - TRemaining) / TSlaTotal);
+        }
+        
+        // Prevent Math.log2 from crashing if N is missing/negative
+        const wr = 2.5, wv = 1.0, ws = 2.0, wt = 3.0;
+        const P = (wr * Math.log2(1 + N)) +
+                  (wv * (Va - Vd)) +
+                  (ws * Sai) +
+                  (wt * timeFactor);
+
+        return { ...issue, priorityScore: P, overdue: sla.isOverdue(issue, now) };
+      })
       .sort((a, b) => {
-        if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
-        if (b.agreeCount !== a.agreeCount) return b.agreeCount - a.agreeCount;
+        // High priority score first
+        if (b.priorityScore !== a.priorityScore) {
+          return b.priorityScore - a.priorityScore;
+        }
         return new Date(a.createdAt) - new Date(b.createdAt);
       })
       .slice(0, parseInt(limit));
@@ -341,9 +368,11 @@ router.get('/queue', auth, admin, async (req, res) => {
     const userVotes = await voteMapFor(req.user.id, ranked);
 
     res.json(
-      ranked.map((issue) =>
-        serializeIssue(issue, { userVote: userVotes[issue._id.toString()] || null })
-      )
+      ranked.map((issue) => {
+        const serialized = serializeIssue(issue, { userVote: userVotes[issue._id.toString()] || null });
+        serialized.priority_score = issue.priorityScore;
+        return serialized;
+      })
     );
   } catch (err) {
     console.error(err.message);
@@ -351,7 +380,46 @@ router.get('/queue', auth, admin, async (req, res) => {
   }
 });
 
+// @route   GET api/issues/nearby-candidates
+// @desc    Interactive Proximity Interceptor
+router.get('/nearby-candidates', auth, async (req, res) => {
+  const { lat, lng, category, radius = 25 } = req.query;
+
+  if (lat === undefined || lng === undefined) {
+    return res.status(400).json({ message: 'Latitude and longitude required' });
+  }
+
+  const targetLat = Number.parseFloat(lat);
+  const targetLng = Number.parseFloat(lng);
+  const radiusKm = Number.parseFloat(radius) / 1000.0;
+  const EARTH_RADIUS_KM = 6378.1;
+
+  try {
+    const filter = {
+      status: { $nin: ['Resolved', 'Rejected'] },
+      location: {
+        $geoWithin: {
+          $centerSphere: [[targetLng, targetLat], radiusKm / EARTH_RADIUS_KM],
+        },
+      },
+    };
+    if (category) filter.category = category;
+
+    const issues = await Issue.find(filter)
+      .sort({ createdAt: -1 })
+      .populate('userId', 'username avatarUrl')
+      .lean();
+
+    res.json(issues.map((issue) => serializeIssue(issue)));
+  } catch (err) {
+    console.error('Candidates error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
 // @route   GET api/issues/:id
+
 // @desc    Get single issue details
 // @access  Public
 router.get('/:id', async (req, res) => {
@@ -527,6 +595,71 @@ router.get('/:id/upvote/count', async (req, res) => {
     res.json({ count });
   } catch (err) {
     console.error(err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+const memoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_PHOTO_BYTES },
+  fileFilter: (req, file, cb) => {
+    cb(null, true);
+  }
+});
+
+// @route   POST api/issues/classify
+// @desc    Pre-Submission AI Classification
+router.post('/classify', auth, memoryUpload.single('photo'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+
+    const aiUrl = config.aiServiceUrl || 'http://localhost:8000';
+    const formData = new FormData();
+    const blob = new Blob([req.file.buffer], { type: req.file.mimetype });
+    formData.append('file', blob, req.file.originalname);
+
+    const response = await fetch(`${aiUrl}/api/v1/classify`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json(await response.json());
+    }
+
+    res.json(await response.json());
+  } catch (err) {
+    console.error('Classification error:', err);
+    res.status(500).json({ message: 'Server classification error' });
+  }
+});
+
+// @route   POST api/issues/:id/attach-evidence
+// @desc    Append user photo to existing issue
+router.post('/:id/attach-evidence', auth, async (req, res) => {
+  const { imageUrls } = req.body;
+  
+  if (!imageUrls || !imageUrls.length) {
+    return res.status(400).json({ message: 'imageUrls array required' });
+  }
+
+  try {
+    const issue = await Issue.findById(req.params.id);
+    if (!issue) return res.status(404).json({ message: 'Issue not found' });
+
+    issue.imageUrls.push(...imageUrls);
+    
+    // Convert ObjectIds to strings for Set comparison
+    const existingReporters = issue.reporters.map(id => id.toString());
+    if (!existingReporters.includes(req.user.id)) {
+      issue.reporters.push(req.user.id);
+      issue.reportCount += 1;
+    }
+
+    await issue.save();
+    res.json(serializeIssue(issue.toObject()));
+  } catch (err) {
+    console.error('Attach evidence error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });

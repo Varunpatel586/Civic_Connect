@@ -108,7 +108,21 @@ const IssueSchema = new mongoose.Schema({
   },
   agreeCount: { type: Number, default: 0 },
   disagreeCount: { type: Number, default: 0 },
-  slaDeadline: { type: Date }
+  slaDeadline: { type: Date },
+  severityScore: {
+    type: Number,
+    min: 1,
+    max: 5,
+    default: 2
+  },
+  calculatedPriority: {
+    type: Number,
+    default: 0
+  },
+  isUserVerifiedDuplicate: {
+    type: Boolean,
+    default: false
+  }
 }, { timestamps: true });
 
 /**
