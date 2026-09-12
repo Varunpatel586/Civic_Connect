@@ -18,7 +18,7 @@ The project separates frontend client views from backend database operations usi
 │   ├── run-ai.js        # Helper script for running AI venv concurrently
 │   └── server.js        # Main Express application entrypoint
 ├── ai_service/          # Python FastAPI Vision Microservice
-│   ├── main.py          # FastAPI server entrypoint (CLIP model comparison)
+│   ├── main.py          # FastAPI server entrypoint (CLIP classification + ORB matching)
 │   ├── requirements.txt # Python dependencies
 │   └── README.md        # Dedicated FastAPI readme
 └── lib/                 # Flutter Mobile Client Source
@@ -45,8 +45,9 @@ graph TD
     Express -->|Verifies JWT Tokens| Middleware[Auth Middleware]
     Express -->|Queries Mongoose Schemas| Mongo[(MongoDB Database)]
     Express -->|Saves Image Binaries| Uploads[Local Uploads Folder]
-    Express -->|Compares Visual Similarity| FastAPI[FastAPI Microservice on port 8000]
-    FastAPI -->|Runs CLIP Model| PyTorch[PyTorch / sentence-transformers]
+    Express -->|Classifies uploads and compares duplicates| FastAPI[FastAPI Microservice on port 8000]
+    FastAPI -->|Zero-shot classification| CLIP[OpenAI CLIP]
+    FastAPI -->|Geometric duplicate matching| OpenCV[OpenCV ORB + RANSAC]
 ```
 
 ### 1. Client Presentation Layer (UI)
@@ -91,7 +92,14 @@ sequenceDiagram
     CS->>LS: Request current coordinates
     LS-->>CS: Return Latitude/Longitude
     CS->>ISS: Navigate with Image & Coordinates
-    ISS->>ISS: Input Title, Category & Description
+    ISS->>AC: classifyImage(initialImage)
+    AC->>EX: POST /issues/classify (multipart photo)
+    EX->>AI: POST /api/v1/classify
+    AI->>AI: Zero-shot CLIP scores civic and distractor prompts
+    AI-->>EX: Category, confidence, blur and ambiguity result
+    EX-->>AC: Return classification result
+    ISS->>ISS: Auto-select only a confident category; otherwise use Other
+    ISS->>ISS: Input Category & Description
     U->>ISS: Tap Submit
     ISS->>AC: uploadMultipart('/issues/upload')
     AC->>EX: POST /issues/upload (Send File Stream)
@@ -113,7 +121,7 @@ sequenceDiagram
         rect rgb(255, 248, 235)
             Note over EX,AI: Visual Similarity Engine
             EX->>AI: POST /api/v1/compare (target & candidate paths)
-            AI->>AI: Compute Cosine Similarity using CLIP embeddings
+            AI->>AI: Compute ORB descriptor matches and verify with RANSAC
             AI-->>EX: Return match result (is_duplicate: true/false)
         end
     end

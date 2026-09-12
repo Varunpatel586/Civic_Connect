@@ -11,6 +11,25 @@ Located in [api_client.dart](../lib/services/api_client.dart). The core network 
 - Appending Authorization headers (`Bearer <token>`) automatically.
 - Supporting generic `get`, `post`, `put`, `patch`, `delete` HTTP queries.
 - Supporting `uploadMultipart` for uploading file streams to the backend server storage.
+- Supporting `classifyImage(XFile)` for pre-submission image classification through
+	`POST /issues/classify`.
+
+### Image classification behavior
+
+`classifyImage` sends the captured image to the Express API before the issue form
+is submitted. Express forwards the multipart file to the FastAPI vision service
+at `POST /api/v1/classify`. The response contains:
+
+- `category`: one of the complaint taxonomy values, including `other`.
+- `confidence`: the winning zero-shot CLIP score.
+- `is_confident`: whether the score passes the confidence and separation checks.
+- `is_blurry` and `blur_score`: image quality indicators.
+- `is_civic`: false when a distractor prompt wins.
+- `reason`: a user-facing explanation when the category needs confirmation.
+
+The client only auto-selects a category when `is_confident` is true. Uncertain
+results start as `other`, allowing the citizen to choose manually instead of
+silently filing the default category.
 
 ---
 
@@ -79,9 +98,30 @@ Located in [deep_link_service.dart](../lib/services/deep_link_service.dart). Cap
 ---
 
 ## 8. AI Vision Clustering Service (Microservice)
-Located in the `ai_service/` directory and hosted as a Python FastAPI service. Integrated via Express backend endpoints to verify visual duplicate uploads:
+Located in the `ai_service/` directory and hosted as a Python FastAPI service.
+It exposes two separate image workflows:
+
+### Pre-submission classification
+
+* **Endpoint**: `POST /api/v1/classify`
+* **Input**: Multipart image field named `file`.
+* **Processing**: Zero-shot `openai/clip-vit-base-patch32` scores civic-category
+	prompts alongside non-civic distractor prompts. A category is considered
+	confident only when its score is at least `0.55`, exceeds the strongest
+	alternative by at least `0.10`, and the image is not blurry.
+* **Quality checks**: Blur is measured using Laplacian variance after scaling to
+	a fixed width. Unrelated images are returned as `other` with `is_civic=false`.
+* **Output**: Category, confidence, confidence state, blur data, civic state,
+	and a reason for manual confirmation when needed.
+
+### Duplicate comparison
+
 * **Endpoint**: `POST /api/v1/compare`
-* **Input**: Target image path, list of candidate issues and their image paths, and a similarity threshold (default: `0.82`).
-* **Processing**: Generates normalised 512-dimensional vector embeddings using the lightweight vision transformer `clip-ViT-B-32` and measures Cosine Similarity between the target image and all candidates.
-* **Output**: Returns the highest matching `issue_id`, its similarity score, and a boolean `is_duplicate`.
+* **Input**: Target image path, candidate issue image paths, and a minimum
+	inlier threshold. The current backend uses `25` inliers.
+* **Processing**: Standardizes image width, detects ORB features, matches binary
+	descriptors with a Hamming-distance brute-force matcher, and verifies the
+	matches using a RANSAC homography.
+* **Output**: Returns the candidate with the highest verified inlier count and
+	`is_duplicate=true` only when the threshold is met.
 

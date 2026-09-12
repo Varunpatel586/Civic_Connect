@@ -56,6 +56,11 @@ Located in [issue_submission_screen.dart](../lib/screens/issue_submission_screen
   - The form is a stack of cards (`_Section`): Category, What is wrong, Location.
   - `_CategoryPicker` is a **grid of chips**, not a dropdown — eight options is few enough to show at once, and seeing them all helps a citizen pick the right one.
   - `_EvidenceStrip` shows the captured photo plus a thumbnail rail for extra images added via `image_picker`.
+  - Runs an AI preflight classification for the captured photo before filing.
+    Confident results can select a category automatically; ambiguous, non-civic,
+    or blurry results leave category selection to the citizen.
+  - Uncertain results start at `Other` and display the server-provided reason
+    when manual confirmation is required.
   - `_LocationCard` renders three states: locating, resolved (address plus coordinates in the record face), and unavailable (an amber block with a retry).
   - Uploads images to `/issues/upload` via `ApiClient().uploadMultipart`, then files through `AppProvider.reportIssue` so the feed and the citizen's own list both refresh.
   - Filing is disabled until a location is available.

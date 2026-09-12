@@ -16,7 +16,12 @@ sequenceDiagram
     participant DB as MongoDB
     participant AI as FastAPI (Vision Service)
 
-    User->>Client: Captures Photo & Submits Issue
+    User->>Client: Captures Photo
+    Client->>Express: POST /api/issues/classify (preflight image)
+    Express->>AI: POST /api/v1/classify
+    AI-->>Express: Category, confidence, blur and civic checks
+    Express-->>Client: Auto-select category only when confident
+    User->>Client: Confirms category & submits issue
     Client->>Express: 1. POST /api/issues/upload (Upload image file)
     Express-->>Client: Returns saved local image URL
     Client->>Express: 2. POST /api/issues (Submit issue details + image URL)
@@ -84,6 +89,21 @@ The vision service performs scale-standardized Local Keypoint Matching using Ope
 * **Microservice Entrypoint:** [main.py](../ai_service/main.py)
 * **Dependency Checklist:** [requirements.txt](../ai_service/requirements.txt) (`fastapi`, `uvicorn`, `pydantic`, `opencv-python`, `numpy`)
 * **Similarity Metric:** Physically verified inlier count (default threshold >= 25 inliers) instead of a neural network's semantic vector.
+
+### 3.1 Pre-submission classification
+
+The same FastAPI service also exposes `POST /api/v1/classify` for the issue
+submission screen. It uses the zero-shot model `openai/clip-vit-base-patch32`
+with civic prompts for potholes, road damage, street lights, garbage,
+electricity, water, and drainage, plus distractor prompts for unrelated images.
+
+The classifier does not treat the top-ranked label as automatically correct.
+It requires a minimum score of `0.55`, a lead of at least `0.10` over the next
+strongest prompt, and a non-blurry image before setting `is_confident=true`.
+If a distractor wins, the service returns `category="other"` and
+`is_civic=false`. The client also uses `other` as its initial category when the
+result is ambiguous, so garbage or unrelated images cannot silently become an
+electricity, pothole, or other specific complaint.
 
 ---
 

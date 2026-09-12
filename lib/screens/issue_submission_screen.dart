@@ -41,22 +41,28 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
   final _locationService = LocationService();
 
   final List<XFile> _additionalImages = [];
-  String _category = 'pothole';
+  String _category = 'other';
   bool _isSubmitting = false;
 
   bool _isConfident = false;
   bool _isBlurry = false;
+  String? _classificationReason;
   List<dynamic> _nearbyCandidates = [];
 
   Future<void> _runPreflightChecks() async {
     try {
-      final classification = await _apiClient.classifyImage(widget.initialImage);
+      final classification = await _apiClient.classifyImage(
+        widget.initialImage,
+      );
       if (mounted) {
         setState(() {
           _isConfident = classification['is_confident'] ?? false;
           _isBlurry = classification['is_blurry'] ?? false;
+          _classificationReason = classification['reason']?.toString();
           if (_isConfident) {
-            final detected = (classification['category'] ?? '').toString().toLowerCase();
+            final detected = (classification['category'] ?? '')
+                .toString()
+                .toLowerCase();
             for (final cat in IssueCategories.all) {
               if (cat.value.toLowerCase() == detected) {
                 _category = cat.value;
@@ -77,7 +83,11 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
 
   Future<void> _fetchCandidates() async {
     try {
-      final candidates = await _apiClient.getNearbyCandidates(_latitude!, _longitude!, '');
+      final candidates = await _apiClient.getNearbyCandidates(
+        _latitude!,
+        _longitude!,
+        '',
+      );
       if (mounted) {
         setState(() {
           _nearbyCandidates = candidates;
@@ -139,7 +149,9 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
 
       navigator.popUntil((route) => route.isFirst);
       messenger.showSnackBar(
-        const SnackBar(content: Text('Attached to existing complaint successfully.')),
+        const SnackBar(
+          content: Text('Attached to existing complaint successfully.'),
+        ),
       );
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Could not attach: $e')));
@@ -327,11 +339,38 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.warning_amber_rounded, color: Colors.amber.shade700),
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.amber.shade700,
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         'The image appears blurry. Please consider taking a clearer photo for better results.',
+                        style: TextStyle(color: Colors.amber.shade900),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (!_isBlurry &&
+                !_isConfident &&
+                (_classificationReason?.isNotEmpty ?? false))
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
+                  border: Border.all(color: Colors.amber.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.amber.shade700),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _classificationReason!,
                         style: TextStyle(color: Colors.amber.shade900),
                       ),
                     ),
@@ -368,19 +407,23 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (_isConfident)
-                     Padding(
-                       padding: const EdgeInsets.only(bottom: 12),
-                       child: Row(
-                         children: [
-                           const Icon(Icons.auto_awesome, size: 16, color: AppColors.navy700),
-                           const SizedBox(width: 6),
-                           Text(
-                             'AI Auto-detected',
-                             style: AppTypography.meta(color: AppColors.navy700),
-                           ),
-                         ],
-                       ),
-                     ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.auto_awesome,
+                            size: 16,
+                            color: AppColors.navy700,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'AI Auto-detected',
+                            style: AppTypography.meta(color: AppColors.navy700),
+                          ),
+                        ],
+                      ),
+                    ),
                   _CategoryPicker(
                     selected: _category,
                     onChanged: (value) => setState(() => _category = value),
@@ -521,7 +564,10 @@ class _EvidenceStrip extends StatelessWidget {
                         child: SizedBox(
                           width: 72,
                           height: 72,
-                          child: LocalPhoto(file: additional[i], fit: BoxFit.cover),
+                          child: LocalPhoto(
+                            file: additional[i],
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
                       Positioned(
