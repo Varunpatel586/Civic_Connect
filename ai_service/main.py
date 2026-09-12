@@ -139,11 +139,12 @@ from fastapi import UploadFile, File
 # category; they exist only to give the softmax somewhere else to go.
 
 CIVIC_PROMPTS = {
-    "a close-up photo of a pothole, a deep hole or crater in the road surface, often filled with muddy water": "pothole",
-    "a photo looking up at an outdoor street lamp post, light pole, or dark municipal lantern": "street_light",
-    "a photo showing a large pile of garbage, overflowing trash dump, or roadside waste": "garbage",
-    "a photo showing flowing water leak, burst pipe flooding, or water supply disruption": "water",
-    "a photo showing a clogged drainage ditch, open sewer manhole, or dirty wastewater": "drainage",
+    "a close-up photo whose main subject is a deep pothole or crater in the road surface, often filled with muddy water": "pothole",
+    "a photo whose main subject is an outdoor street lamp post, light pole, or municipal lantern": "street_light",
+    "a photo whose main subject is trash bags, loose litter, an overflowing garbage bin, or a roadside waste pile; no electrical equipment is the main subject": "garbage",
+    "a photo whose main subject is damaged electrical wiring, a fallen power line, an exposed electrical box, or visible electrical arcing; not ordinary litter": "electricity",
+    "a photo whose main subject is a flowing water leak, burst pipe, flooding, or water supply disruption": "water",
+    "a photo whose main subject is a clogged drainage ditch, open sewer manhole, or dirty wastewater": "drainage",
     # The pothole and road prompts are deliberately worded to exclude each
     # other: "deep hole" against "with no deep hole". Their first drafts both
     # mentioned broken road surfaces, and every real pothole photo in
@@ -152,8 +153,7 @@ CIVIC_PROMPTS = {
     # Both of these are already in the complaint taxonomy but were missing
     # here, so an electrical hazard was forced into whichever of the other five
     # happened to score highest.
-    "a photo of damaged electrical wiring, a fallen power line, or an exposed electrical box": "electricity",
-    "a photo of a cracked or uneven road surface or a damaged footpath, with no deep hole": "road",
+    "a photo whose main subject is a cracked or uneven road surface or damaged footpath, with no deep hole": "road",
 }
 
 DISTRACTOR_PROMPTS = [
@@ -170,7 +170,8 @@ CANDIDATE_LABELS = list(CIVIC_PROMPTS.keys()) + DISTRACTOR_PROMPTS
 
 # Below this the winning label is not clearly ahead of its alternatives, and
 # the citizen should pick the category themselves.
-CONFIDENCE_FLOOR = 0.38
+CONFIDENCE_FLOOR = 0.55
+CONFIDENCE_MARGIN = 0.10
 
 # Laplacian variance scales with resolution, so a 12 MP phone photo and a
 # downscaled copy of the same scene score very differently. Measuring at a
@@ -260,7 +261,15 @@ async def classify_and_check_quality(file: UploadFile = File(...)):
                 reason="This does not look like a civic issue. Pick a category yourself if it is one.",
             )
 
-        confident = confidence >= CONFIDENCE_FLOOR and not is_blurry
+        strongest_alternative = max(
+            (float(prediction["score"]) for prediction in predictions[1:]),
+            default=0.0,
+        )
+        confident = (
+            confidence >= CONFIDENCE_FLOOR
+            and confidence - strongest_alternative >= CONFIDENCE_MARGIN
+            and not is_blurry
+        )
         return ClassificationResult(
             category=category,
             confidence=confidence,
@@ -274,7 +283,7 @@ async def classify_and_check_quality(file: UploadFile = File(...)):
                 else (
                     "Photo is too blurry to read"
                     if is_blurry
-                    else "Not sure what this shows — please confirm the category"
+                    else "The image is ambiguous — please confirm the category"
                 )
             ),
         )

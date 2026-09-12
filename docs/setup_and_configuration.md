@@ -79,6 +79,13 @@ When running `npm run dev`, concurrently will start:
 * Express server at `http://localhost:5000` (reloads on file changes).
 * Python FastAPI microservice at `http://localhost:8000` (reloads on file changes).
 
+The Android app must be able to reach both services through the Express server.
+For a physical Android device, replace `10.0.2.2` with the host computer's
+active Wi-Fi IPv4 address, for example:
+`http://192.168.29.115:5000/api`. Do not use an automatic fallback address in
+the `169.254.x.x` range. The phone and computer must be on the same network,
+and the Express server must listen on an address reachable from the device.
+
 ---
 
 ## 3. Running the Client Mobile App (Root Directory)
