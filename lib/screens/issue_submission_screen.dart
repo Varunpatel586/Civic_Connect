@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +11,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_typography.dart';
 import '../utils/issue_categories.dart';
+import '../widgets/local_photo.dart';
 
 /// Files a new complaint: evidence, classification, description, location.
 ///
@@ -41,8 +41,124 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
   final _locationService = LocationService();
 
   final List<XFile> _additionalImages = [];
-  String _category = 'pothole';
+  String _category = 'other';
   bool _isSubmitting = false;
+
+  bool _isConfident = false;
+  bool _isBlurry = false;
+  String? _classificationReason;
+  List<dynamic> _nearbyCandidates = [];
+
+  Future<void> _runPreflightChecks() async {
+    try {
+      final classification = await _apiClient.classifyImage(
+        widget.initialImage,
+      );
+      if (mounted) {
+        setState(() {
+          _isConfident = classification['is_confident'] ?? false;
+          _isBlurry = classification['is_blurry'] ?? false;
+          _classificationReason = classification['reason']?.toString();
+          if (_isConfident) {
+            final detected = (classification['category'] ?? '')
+                .toString()
+                .toLowerCase();
+            for (final cat in IssueCategories.all) {
+              if (cat.value.toLowerCase() == detected) {
+                _category = cat.value;
+                break;
+              }
+            }
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Classification error: $e');
+    }
+
+    if (_hasLocation) {
+      _fetchCandidates();
+    }
+  }
+
+  Future<void> _fetchCandidates() async {
+    try {
+      final candidates = await _apiClient.getNearbyCandidates(
+        _latitude!,
+        _longitude!,
+        '',
+      );
+      if (mounted) {
+        setState(() {
+          _nearbyCandidates = candidates;
+        });
+      }
+    } catch (e) {
+      debugPrint('Candidates error: $e');
+    }
+  }
+
+  void _showCandidatesModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          builder: (ctx, scrollController) {
+            return ListView.builder(
+              controller: scrollController,
+              itemCount: _nearbyCandidates.length,
+              itemBuilder: (ctx, i) {
+                final candidate = _nearbyCandidates[i];
+                return Card(
+                  margin: const EdgeInsets.all(8),
+                  child: ListTile(
+                    title: Text(candidate['title'] ?? 'Complaint'),
+                    subtitle: Text(candidate['category'] ?? ''),
+                    trailing: ElevatedButton(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _attachToExisting(candidate['id']);
+                      },
+                      child: const Text('This is the same problem'),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _attachToExisting(String issueId) async {
+    setState(() => _isSubmitting = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    try {
+      final imageUrls = <String>[await _upload(widget.initialImage)];
+      for (final image in _additionalImages) {
+        imageUrls.add(await _upload(image));
+      }
+
+      await _apiClient.attachEvidence(issueId, imageUrls);
+
+      navigator.popUntil((route) => route.isFirst);
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Attached to existing complaint successfully.'),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not attach: $e')));
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
 
   double? _latitude;
   double? _longitude;
@@ -65,6 +181,7 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
       // silently filing a complaint at coordinates 0, 0.
       _resolveLocation();
     }
+    _runPreflightChecks();
   }
 
   @override
@@ -211,11 +328,107 @@ class _IssueSubmissionScreenState extends State<IssueSubmissionScreen> {
               onRemove: (index) =>
                   setState(() => _additionalImages.removeAt(index)),
             ),
+            if (_isBlurry)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
+                  border: Border.all(color: Colors.amber.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.amber.shade700,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'The image appears blurry. Please consider taking a clearer photo for better results.',
+                        style: TextStyle(color: Colors.amber.shade900),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (!_isBlurry &&
+                !_isConfident &&
+                (_classificationReason?.isNotEmpty ?? false))
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
+                  border: Border.all(color: Colors.amber.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.amber.shade700),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _classificationReason!,
+                        style: TextStyle(color: Colors.amber.shade900),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (_nearbyCandidates.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.slate100,
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
+                  border: Border.all(color: AppColors.slate200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${_nearbyCandidates.length} active complaints reported within 25 meters.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: _showCandidatesModal,
+                      child: const Text('Review Existing'),
+                    ),
+                  ],
+                ),
+              ),
             _Section(
               label: 'Category',
-              child: _CategoryPicker(
-                selected: _category,
-                onChanged: (value) => setState(() => _category = value),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_isConfident)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.auto_awesome,
+                            size: 16,
+                            color: AppColors.navy700,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'AI Auto-detected',
+                            style: AppTypography.meta(color: AppColors.navy700),
+                          ),
+                        ],
+                      ),
+                    ),
+                  _CategoryPicker(
+                    selected: _category,
+                    onChanged: (value) => setState(() => _category = value),
+                  ),
+                ],
               ),
             ),
             _Section(
@@ -332,7 +545,7 @@ class _EvidenceStrip extends StatelessWidget {
       children: [
         AspectRatio(
           aspectRatio: 4 / 3,
-          child: _Photo(file: initialImage, fit: BoxFit.cover),
+          child: LocalPhoto(file: initialImage, fit: BoxFit.cover),
         ),
         const SizedBox(height: 14),
         SizedBox(
@@ -351,7 +564,10 @@ class _EvidenceStrip extends StatelessWidget {
                         child: SizedBox(
                           width: 72,
                           height: 72,
-                          child: _Photo(file: additional[i], fit: BoxFit.cover),
+                          child: LocalPhoto(
+                            file: additional[i],
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
                       Positioned(
@@ -565,40 +781,6 @@ class _LocationCard extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// Renders a captured or picked photograph on any platform.
-///
-/// `Image.file` needs a `dart:io` handle, which web does not have. Reading the
-/// bytes works everywhere and is cheap here — these are single previews, not a
-/// scrolling gallery.
-class _Photo extends StatelessWidget {
-  final XFile file;
-  final BoxFit fit;
-
-  const _Photo({required this.file, required this.fit});
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<Uint8List>(
-      future: file.readAsBytes(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Container(
-            color: AppColors.slate100,
-            child: const Icon(
-              Icons.broken_image_outlined,
-              color: AppColors.slate400,
-            ),
-          );
-        }
-        if (!snapshot.hasData) {
-          return Container(color: AppColors.slate100);
-        }
-        return Image.memory(snapshot.data!, fit: fit);
-      },
     );
   }
 }

@@ -54,10 +54,20 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
   /// Always refetches rather than reading the provider's cached copy: this
   /// screen shows the status history, which list endpoints do not return.
   Future<void> _load() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+    await _loadData(showLoading: true);
+  }
+
+  Future<void> _refreshData() async {
+    await _loadData(showLoading: false);
+  }
+
+  Future<void> _loadData({required bool showLoading}) async {
+    if (showLoading) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
 
     try {
       final issue = await _issueService.getIssueById(widget.issueId);
@@ -99,7 +109,7 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
 
     try {
       await appProvider.voteOnIssue(widget.issueId, isAgree);
-      await _load();
+      await _refreshData();
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(
@@ -120,6 +130,7 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
 
     try {
       await appProvider.addComment(widget.issueId, content);
+      await _refreshData();
       _commentController.clear();
     } catch (e) {
       messenger.showSnackBar(
@@ -158,6 +169,88 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
       messenger.showSnackBar(
         const SnackBar(content: Text('No maps app available to open this.')),
       );
+    }
+  }
+
+
+  /// The prompt belongs to the people who reported it, and only while the
+  /// question is actually open.
+  bool _canVerify(Issue issue) {
+    if (issue.verificationState != 'pending') return false;
+    final me = context.read<AppProvider>().currentUser?.id;
+    if (me == null || me.isEmpty) return false;
+    return issue.reporterIds.contains(me) || issue.userId == me;
+  }
+
+  /// Answers "is this actually fixed?".
+  ///
+  /// Confirming closes the complaint for good. Disputing sends it back into the
+  /// queue escalated, so it asks for a reason first — an unexplained reopen
+  /// gives the officer nothing to act on.
+  Future<void> _verify(bool confirmed) async {
+    String note = '';
+
+    if (!confirmed) {
+      final controller = TextEditingController();
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('What is still wrong?'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 3,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              hintText: 'Describe what has not been fixed',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Reopen complaint'),
+            ),
+          ],
+        ),
+      );
+
+      note = controller.text.trim();
+      controller.dispose();
+      if (proceed != true) return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final updated = await _issueService.verifyFix(
+        issueId: widget.issueId,
+        confirmed: confirmed,
+        note: note,
+      );
+      if (!mounted) return;
+      setState(() => _issue = updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            confirmed
+                ? 'Thank you. This complaint is now closed.'
+                : 'Reopened and escalated to your ward office.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      // The server's own words: a complaint somebody else already answered
+      // comes back as a 409, which is worth showing rather than swallowing.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -230,6 +323,14 @@ class _IssueDetailScreenState extends State<IssueDetailScreen> {
         children: [
           _Evidence(issue: issue),
           _Summary(issue: issue, sla: sla),
+          if (_canVerify(issue))
+            _VerificationPrompt(
+              issue: issue,
+              busy: _isSubmitting,
+              onAnswer: _verify,
+            ),
+          if (issue.verificationState == 'disputed')
+            _EscalatedBanner(issue: issue),
           _LocationRow(issue: issue, onOpenMaps: _openInMaps),
           _VoteBar(issue: issue, onVote: _vote),
           if (issue.statusHistory.isNotEmpty) _Timeline(issue: issue),
@@ -280,7 +381,8 @@ class _EvidenceState extends State<_Evidence> {
                 imageUrl: ApiClient().normalizeUrl(urls[index]),
                 fit: BoxFit.cover,
                 fadeInDuration: const Duration(milliseconds: 180),
-                placeholder: (context, url) => Container(color: AppColors.slate100),
+                placeholder: (context, url) =>
+                    Container(color: AppColors.slate100),
                 errorWidget: (context, url, error) => Container(
                   color: AppColors.slate100,
                   child: const Icon(
@@ -742,6 +844,30 @@ class _TimelineEntry extends StatelessWidget {
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ],
+                  // The proof photo stays in the record after the
+                  // verification prompt has been answered and gone.
+                  if (event.photoUrl.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(AppTheme.radius),
+                      child: CachedNetworkImage(
+                        imageUrl: ApiClient().normalizeUrl(event.photoUrl),
+                        height: 128,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        placeholder: (context, _) =>
+                            Container(height: 128, color: AppColors.slate100),
+                        errorWidget: (context, _, __) => Container(
+                          height: 128,
+                          color: AppColors.slate100,
+                          child: const Icon(
+                            Icons.broken_image_outlined,
+                            color: AppColors.slate400,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -859,6 +985,226 @@ class _CommentComposer extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The question the whole system exists to ask: is it actually fixed?
+///
+/// Shown only to the people who reported the complaint, and only while the
+/// window is open. Deliberately placed directly under the summary rather than
+/// at the foot of the page — it is a call to action, not a footnote, and a
+/// citizen who has to scroll past the comments to find it will not answer.
+class _VerificationPrompt extends StatelessWidget {
+  final Issue issue;
+  final bool busy;
+  final ValueChanged<bool> onAnswer;
+
+  const _VerificationPrompt({
+    required this.issue,
+    required this.busy,
+    required this.onAnswer,
+  });
+
+  /// Plain-language time remaining. Precision past a day is noise here.
+  String get _remaining {
+    final due = issue.verificationDueBy;
+    if (due == null) return '';
+    final left = due.difference(DateTime.now());
+    if (left.isNegative) return 'Closing shortly';
+    if (left.inHours >= 24) return '${left.inDays + 1} days left to answer';
+    if (left.inHours >= 1) return '${left.inHours} hours left to answer';
+    return 'Less than an hour left to answer';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = StatusColors.inProgress;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: palette.background,
+        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+        border: Border.all(color: palette.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.help_outline, size: 18, color: palette.foreground),
+              const SizedBox(width: 8),
+              Text(
+                'Is this actually fixed?',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: palette.foreground,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Your ward office has marked this complaint resolved. Nothing '
+            'closes until you say so.',
+            style: AppTypography.meta(color: AppColors.slate600),
+          ),
+          if (_remaining.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(_remaining, style: AppTypography.meta(color: AppColors.slate400)),
+          ],
+          if (issue.resolutionPhotoUrl.isNotEmpty &&
+              issue.imageUrl.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _BeforeAfter(
+              beforeUrl: issue.imageUrl,
+              afterUrl: issue.resolutionPhotoUrl,
+            ),
+          ],
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: busy ? null : () => onAnswer(true),
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text('Yes, it is fixed'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: busy ? null : () => onAnswer(false),
+                  icon: const Icon(Icons.replay, size: 18),
+                  label: const Text('No, reopen'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown after a reporter rejected a claimed fix, so the escalation is visible
+/// to everyone reading the complaint rather than buried in the timeline.
+class _EscalatedBanner extends StatelessWidget {
+  final Issue issue;
+
+  const _EscalatedBanner({required this.issue});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = StatusColors.overdue;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: palette.background,
+        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+        border: Border.all(color: palette.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.priority_high, size: 18, color: palette.foreground),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  issue.reopenCount > 1
+                      ? 'Reopened ${issue.reopenCount} times'
+                      : 'Reopened by the reporter',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: palette.foreground,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                if (issue.verificationNote.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    issue.verificationNote,
+                    style: AppTypography.meta(color: AppColors.slate600),
+                  ),
+                ],
+                const SizedBox(height: 3),
+                Text(
+                  'The response deadline was never reset, so this complaint '
+                  'sits at the top of the ward queue.',
+                  style: AppTypography.meta(color: AppColors.slate400),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The original complaint photo beside the officer's photo of the work.
+///
+/// This is what makes the verification question answerable. Asked from memory,
+/// days after filing, a citizen is guessing; shown the two pictures together,
+/// they are judging.
+class _BeforeAfter extends StatelessWidget {
+  final String beforeUrl;
+  final String afterUrl;
+
+  const _BeforeAfter({required this.beforeUrl, required this.afterUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: _Pane(label: 'You reported', url: beforeUrl)),
+        const SizedBox(width: 10),
+        Expanded(child: _Pane(label: 'Ward office says', url: afterUrl)),
+      ],
+    );
+  }
+}
+
+class _Pane extends StatelessWidget {
+  final String label;
+  final String url;
+
+  const _Pane({required this.label, required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: AppTypography.sectionLabel()),
+        const SizedBox(height: 5),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: CachedNetworkImage(
+              imageUrl: ApiClient().normalizeUrl(url),
+              fit: BoxFit.cover,
+              fadeInDuration: const Duration(milliseconds: 180),
+              placeholder: (context, _) => Container(color: AppColors.slate100),
+              errorWidget: (context, _, __) => Container(
+                color: AppColors.slate100,
+                child: const Icon(
+                  Icons.broken_image_outlined,
+                  color: AppColors.slate400,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

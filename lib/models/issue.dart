@@ -32,6 +32,36 @@ class Issue {
 
   /// Populated by the single-issue endpoint only; list endpoints omit it.
   final List<StatusEvent> statusHistory;
+  /// Quotable complaint reference, e.g. `CC-2026-GJ-04821`. Computed by the
+  /// server so it cannot disagree with what a notification quoted.
+  /// Everyone who reported this complaint. Clustering merges duplicate
+  /// reports, so this can hold several accounts, and any of them may
+  /// answer the verification question.
+  final List<String> reporterIds;
+
+  /// Photo from the most recent time an officer claimed this was fixed.
+  /// Shown beside the original when the reporter is asked to confirm.
+  final String resolutionPhotoUrl;
+  final String? reference;
+
+  /// Whether the reporter has agreed the fix is real: one of `none`,
+  /// `pending`, `confirmed`, `auto_confirmed` or `disputed`. Independent of
+  /// [status] — the officer claims, the citizen confirms.
+  final String verificationState;
+
+  /// When the reporter loses the chance to dispute a claimed fix.
+  final DateTime? verificationDueBy;
+
+  /// The reporter's own words when they answered.
+  final String verificationNote;
+
+  /// Photo the reporter supplied to show the problem is still there.
+  final String verificationEvidenceUrl;
+
+  /// Set when a disputed fix sent this complaint back into the queue.
+  final DateTime? escalatedAt;
+
+  final int reopenCount;
 
   Issue({
     required this.id,
@@ -55,6 +85,14 @@ class Issue {
     this.dueAt,
     this.closedAt,
     this.statusHistory = const [],
+    this.reporterIds = const [],
+    this.resolutionPhotoUrl = '',    this.reference,
+    this.verificationState = 'none',
+    this.verificationDueBy,
+    this.verificationNote = '',
+    this.verificationEvidenceUrl = '',
+    this.escalatedAt,
+    this.reopenCount = 0,
   });
 
   factory Issue.fromJson(Map<String, dynamic> json) {
@@ -96,6 +134,21 @@ class Issue {
               )
               .toList() ??
           const [],
+      reporterIds:
+          (json['reporter_ids'] as List?)?.map((e) => e.toString()).toList() ??
+          const [],
+      resolutionPhotoUrl: json['resolution_photo_url']?.toString() ?? '',      reference: json['reference']?.toString(),
+      verificationState: json['verification_state']?.toString() ?? 'none',
+      verificationDueBy: json['verification_due_by'] != null
+          ? DateTime.tryParse(json['verification_due_by'].toString())
+          : null,
+      verificationNote: json['verification_note']?.toString() ?? '',
+      verificationEvidenceUrl:
+          json['verification_evidence_url']?.toString() ?? '',
+      escalatedAt: json['escalated_at'] != null
+          ? DateTime.tryParse(json['escalated_at'].toString())
+          : null,
+      reopenCount: (json['reopen_count'] as int?) ?? 0,
     );
   }
 
@@ -122,6 +175,14 @@ class Issue {
       'due_at': dueAt?.toIso8601String(),
       'closed_at': closedAt?.toIso8601String(),
       'status_history': statusHistory.map((e) => e.toJson()).toList(),
+      'reporter_ids': reporterIds,
+      'resolution_photo_url': resolutionPhotoUrl,      'reference': reference,
+      'verification_state': verificationState,
+      'verification_due_by': verificationDueBy?.toIso8601String(),
+      'verification_note': verificationNote,
+      'verification_evidence_url': verificationEvidenceUrl,
+      'escalated_at': escalatedAt?.toIso8601String(),
+      'reopen_count': reopenCount,
     };
   }
 }

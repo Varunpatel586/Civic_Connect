@@ -11,6 +11,19 @@ Located in [api_client.dart](../lib/services/api_client.dart). The core network 
 - Appending Authorization headers (`Bearer <token>`) automatically.
 - Supporting generic `get`, `post`, `put`, `patch`, `delete` HTTP queries.
 - Supporting `uploadMultipart` for uploading file streams to the backend server storage.
+- Supporting `classifyImage(XFile)` for pre-submission image classification through
+	`POST /issues/classify`.
+
+### Image classification behavior
+
+`classifyImage` sends the captured image to Express before the issue is filed.
+Express forwards the multipart file to FastAPI at `POST /api/v1/classify`.
+The response includes `category`, `confidence`, `is_confident`, `is_blurry`,
+`blur_score`, `is_civic`, and a `reason` for manual confirmation.
+
+The client only auto-selects a category when `is_confident` is true. Ambiguous
+or unrelated images start at `other`, allowing the citizen to select a category
+instead of silently accepting an incorrect model prediction.
 
 ---
 
@@ -79,9 +92,19 @@ Located in [deep_link_service.dart](../lib/services/deep_link_service.dart). Cap
 ---
 
 ## 8. AI Vision Clustering Service (Microservice)
-Located in the `ai_service/` directory and hosted as a Python FastAPI service. Integrated via Express backend endpoints to verify visual duplicate uploads:
-* **Endpoint**: `POST /api/v1/compare`
-* **Input**: Target image path, list of candidate issues and their image paths, and a similarity threshold (default: `0.82`).
-* **Processing**: Generates normalised 512-dimensional vector embeddings using the lightweight vision transformer `clip-ViT-B-32` and measures Cosine Similarity between the target image and all candidates.
-* **Output**: Returns the highest matching `issue_id`, its similarity score, and a boolean `is_duplicate`.
+Located in the `ai_service/` directory and hosted as a Python FastAPI service.
+
+### Classification
+
+`POST /api/v1/classify` uses zero-shot `openai/clip-vit-base-patch32` with
+civic-category and non-civic distractor prompts. Automatic confidence requires
+a score of at least `0.55`, a `0.10` lead over the strongest alternative, and a
+non-blurry image. Distractor wins return `other` and `is_civic=false`.
+
+### Duplicate comparison
+
+`POST /api/v1/compare` uses resized images, ORB keypoints, Hamming descriptor
+matching, and RANSAC homography verification. The backend considers a match a
+duplicate at `25` or more verified inliers; this is geometric matching, not CLIP
+embedding cosine similarity.
 

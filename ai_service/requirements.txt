@@ -1,7 +1,23 @@
-fastapi
-uvicorn
-torch
-torchvision
-pillow
-sentence-transformers
-pydantic
+# Pinned to the versions the classifier was actually validated against.
+#
+# These were previously unpinned, which is how a fresh install picked up
+# transformers 5.x unannounced. The pipeline API this code uses works there,
+# but that was luck rather than design — pin, and bump deliberately.
+
+# API
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5
+python-multipart==0.0.32
+
+# Duplicate matching (ORB + RANSAC) in /api/v1/compare
+opencv-python==5.0.0.93
+numpy==2.4.6
+
+# Zero-shot classification (CLIP) in /api/v1/classify.
+# torch is a transitive requirement of transformers here, but it is pinned
+# explicitly because it is the single largest install in the project and an
+# unpinned major would be a very unpleasant surprise.
+transformers==5.17.0
+torch==2.14.0
+Pillow==12.3.0

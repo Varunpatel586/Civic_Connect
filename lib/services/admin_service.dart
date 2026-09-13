@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:image_picker/image_picker.dart';
 
 import '../models/issue.dart';
 import '../models/ward_stats.dart';
@@ -61,15 +62,38 @@ class AdminService {
     required String issueId,
     required String status,
     String note = '',
+    String photoUrl = '',
   }) async {
     final response = await _apiClient.patch('/issues/$issueId/status', {
       'status': status,
       if (note.trim().isNotEmpty) 'note': note.trim(),
+      if (photoUrl.trim().isNotEmpty) 'photo_url': photoUrl.trim(),
     });
 
     if (response.statusCode == 200) {
       return Issue.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
     }
     throw AdminException(_apiClient.errorMessage(response, 'Could not update the complaint'));
+  }
+  /// Uploads an officer's photograph of completed work and returns its URL.
+  ///
+  /// Reuses the same endpoint citizens file evidence through, so there is
+  /// one upload path and one place where storage decisions get made.
+  Future<String> uploadProofPhoto(XFile image) async {
+    final response = await _apiClient.uploadMultipart(
+      '/issues/upload',
+      fields: const {},
+      files: [image],
+      fileFieldName: 'photo',
+    );
+
+    if (response.statusCode == 200) {
+      final url = (jsonDecode(response.body)['url'] ?? '').toString();
+      if (url.isEmpty) throw AdminException('Upload returned no URL');
+      return url;
+    }
+    throw AdminException(
+      _apiClient.errorMessage(response, 'Could not upload the photo'),
+    );
   }
 }

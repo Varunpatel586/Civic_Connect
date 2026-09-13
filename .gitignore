@@ -124,3 +124,9 @@ server/node_modules
 **/GeneratedPluginRegistrant.swift
 **/generated_plugins.cmake
 
+
+# Uploaded images (stored in MongoDB)
+server/uploads/
+
+# Test directories
+Pothole_Test/

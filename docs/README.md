@@ -29,6 +29,10 @@ Detailed walkthrough explaining how to write the `.env` settings file, connect t
 ### 7. [Clustering Engine & Deduplication](clustering_engine.md)
 Detailed design, system architecture, database updates, Python FastAPI model comparisons, and UI updates for the automated issue clustering pipeline.
 
+The same document also covers the pre-submission image-classification flow,
+including zero-shot CLIP prompts, distractor labels, blur checks, confidence
+thresholds, and manual category fallback behavior.
+
 ---
 
 ## Key Project Code Links

@@ -96,6 +96,10 @@ const IssueSchema = new mongoose.Schema({
         },
         changedAt: { type: Date, default: Date.now },
         note: { type: String, default: '' },
+        // Photograph of the completed work. Required when an officer
+        // moves a complaint to Resolved: a claimed fix the citizen is
+        // asked to confirm is worth very little without a picture of it.
+        photoUrl: { type: String, default: '' },
       },
     ],
     default: [],
@@ -108,7 +112,60 @@ const IssueSchema = new mongoose.Schema({
   },
   agreeCount: { type: Number, default: 0 },
   disagreeCount: { type: Number, default: 0 },
-  slaDeadline: { type: Date }
+  slaDeadline: { type: Date },
+  severityScore: {
+    type: Number,
+    min: 1,
+    max: 5,
+    default: 2
+  },
+  calculatedPriority: {
+    type: Number,
+    default: 0
+  },
+  isUserVerifiedDuplicate: {
+    type: Boolean,
+    default: false
+  },
+  // Whether the reporter agrees the complaint is actually fixed.
+  //
+  // Deliberately separate from "status". These are two independent facts —
+  // what the officer claims, and what the citizen confirms — and folding them
+  // into one enum would multiply states combinatorially and break every
+  // existing status chip, map colour and queue filter. As its own axis, the UI
+  // derives its label from the pair and existing code keeps working untouched.
+  verification: {
+    state: {
+      type: String,
+      enum: ['none', 'pending', 'confirmed', 'auto_confirmed', 'disputed'],
+      default: 'none',
+    },
+    askedAt: { type: Date, default: null },
+    // The reporter has until this moment to answer before silence is taken
+    // as assent. See services/verification.js for the lazy sweep.
+    dueBy: { type: Date, default: null },
+    respondedAt: { type: Date, default: null },
+    respondedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    note: { type: String, default: '' },
+    // Photo the citizen supplied to show the problem is still there.
+    evidenceUrl: { type: String, default: '' },
+  },
+  // Stamped when a reporter disputes a claimed fix. The SLA clock is never
+  // reset on reopen — it measures time from report to *confirmed* fix, and a
+  // dispute is proof the complaint was never fixed — so an escalated complaint
+  // is overdue by construction and sorts to the top of the officer queue.
+  escalatedAt: {
+    type: Date,
+    default: null,
+  },
+  reopenCount: {
+    type: Number,
+    default: 0,
+  },
 }, { timestamps: true });
 
 /**

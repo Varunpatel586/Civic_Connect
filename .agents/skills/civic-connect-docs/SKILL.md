@@ -3,7 +3,8 @@ name: civic-connect-docs
 description: >-
   Provides access to the comprehensive project documentation for Civic Connect.
   Use this skill when you need detailed reference information about project architecture,
-  models, services, database schema, screens/widgets, or setup configurations.
+  models, services, database schema, screens/widgets, image classification,
+  duplicate clustering, or setup configurations.
 ---
 
 # Civic Connect: Project Documentation Portal
@@ -35,7 +36,9 @@ Maps the presentation layer: every screen and reusable widget, plus the Municipa
 Detailed walkthrough explaining how to write the `.env` settings file, connect to local/cloud MongoDB instances, configure local multer upload folders, handle deep link redirect tokens, and run both backend and client locally.
 
 ### 7. [clustering_engine.md](../../../.agents/skills/civic-connect-docs/references/clustering_engine.md)
-Detailed design, system architecture, database schema updates, Python FastAPI model comparisons, and UI updates for the automated issue clustering pipeline.
+Detailed design, system architecture, database schema updates, FastAPI image
+classification, ORB/RANSAC duplicate comparisons, and UI updates for the
+automated issue clustering pipeline.
 
 ### 8. [ENVIRONMENT_VERSIONS.md](../../../ENVIRONMENT_VERSIONS.md)
 Reference sheet detailing the exact versions of the development environment stack (Flutter SDK, Dart SDK, JDK, Android NDK/SDK, Node.js, and MongoDB) along with setup and installation guides.

@@ -223,4 +223,42 @@ class IssueService {
       return [];
     }
   }
+  /// Answers the "is this actually fixed?" question on a resolved complaint.
+  ///
+  /// Only the people who reported it may call this. Confirming closes the
+  /// complaint for good; disputing sends it back into the queue escalated,
+  /// against its original deadline rather than a fresh one.
+  ///
+  /// Returns the updated issue, or throws with the server's message so the
+  /// caller can show why it was refused — a complaint someone else already
+  /// answered comes back as a 409, which is worth telling the user about
+  /// rather than silently swallowing.
+  Future<Issue> verifyFix({
+    required String issueId,
+    required bool confirmed,
+    String? note,
+    String? evidenceUrl,
+  }) async {
+    final response = await _apiClient.post('/issues/$issueId/verify', {
+      'confirmed': confirmed,
+      if (note != null && note.isNotEmpty) 'note': note,
+      if (evidenceUrl != null && evidenceUrl.isNotEmpty)
+        'evidence_url': evidenceUrl,
+    });
+
+    if (response.statusCode == 200) {
+      return Issue.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    }
+
+    String message = 'Could not record your answer';
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map && decoded['message'] != null) {
+        message = decoded['message'].toString();
+      }
+    } catch (_) {
+      // Body was not JSON; the default message stands.
+    }
+    throw Exception(message);
+  }
 }

@@ -1,3 +1,4 @@
+export 'app_notification.dart';
 export 'comment.dart';
 export 'issue.dart';
 export 'status_event.dart';
