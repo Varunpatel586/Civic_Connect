@@ -196,7 +196,7 @@ class _FeedScreenState extends State<FeedScreen> {
                   ),
                 )
                 .then((_) => _load()),
-            onVote: _refreshIssue,
+            onVote: () => _refreshIssue(issue.id),
           );
         },
       ),
