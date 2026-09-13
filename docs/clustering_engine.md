@@ -14,9 +14,14 @@ sequenceDiagram
     participant Client as Flutter Client
     participant Express as Express API Server
     participant DB as MongoDB
-    participant AI as FastAPI (CLIP Service)
+    participant AI as FastAPI (Vision Service)
 
-    User->>Client: Captures Photo & Submits Issue
+    User->>Client: Captures Photo
+    Client->>Express: POST /api/issues/classify (preflight image)
+    Express->>AI: POST /api/v1/classify
+    AI-->>Express: Category, confidence, blur and civic checks
+    Express-->>Client: Auto-select category only when confident
+    User->>Client: Confirms category & submits issue
     Client->>Express: 1. POST /api/issues/upload (Upload image file)
     Express-->>Client: Returns saved local image URL
     Client->>Express: 2. POST /api/issues (Submit issue details + image URL)
@@ -29,10 +34,10 @@ sequenceDiagram
 
     alt Candidates Found
         rect rgb(255, 248, 235)
-            Note over Express,AI: Vision Similarity Check
+            Note over Express,AI: Vision Geometric Matching Check
             Express->>AI: POST /api/v1/compare (new image path & candidate image paths)
-            AI->>AI: Extract CLIP vision embeddings & compute Cosine Similarity
-            AI-->>Express: Returns max_similarity_score & is_duplicate (threshold >= 0.82)
+            AI->>AI: Detect ORB features & match via RANSAC homography check
+            AI-->>Express: Returns inlier count & is_duplicate (inliers >= 25)
         end
     end
 
@@ -74,10 +79,31 @@ Modified [issues.js](../server/routes/issues.js):
 
 ## 3. Python FastAPI Vision Microservice
 
-The vision service uses a lightweight CLIP model to extract deep visual semantic vectors from the images and compute Cosine Similarity.
+The vision service performs scale-standardized Local Keypoint Matching using OpenCV:
+1. **Scale Standardization:** Normalizes the input images to a standard width (600px) to ensure consistency in feature density.
+2. **ORB Feature Detection:** Extracts up to 1500 keypoints and descriptor vectors representing distinct corners, cracks, and physical textures.
+3. **Cross-Check Hamming Distance Matching:** Pairs descriptors from both images via Brute-Force matching with mutual consistency check.
+4. **RANSAC Geometric Verification:** Computes the homography projection matrix between matching points. Outliers that do not map to the same physical plane are discarded. The sum of remaining inliers determines duplicate alignment.
+5. **Transitive Clustering Check:** The microservice evaluates the new image against all photos associated with existing issues in the geospatial cluster, ensuring a transitive match if any image within the cluster aligns above the threshold.
 
 * **Microservice Entrypoint:** [main.py](../ai_service/main.py)
-* **Dependency Checklist:** [requirements.txt](../ai_service/requirements.txt) (`fastapi`, `uvicorn`, `torch`, `torchvision`, `pillow`, `sentence-transformers`, `pydantic`)
+* **Dependency Checklist:** [requirements.txt](../ai_service/requirements.txt) (`fastapi`, `uvicorn`, `pydantic`, `opencv-python`, `numpy`)
+* **Similarity Metric:** Physically verified inlier count (default threshold >= 25 inliers) instead of a neural network's semantic vector.
+
+### 3.1 Pre-submission classification
+
+The same FastAPI service also exposes `POST /api/v1/classify` for the issue
+submission screen. It uses the zero-shot model `openai/clip-vit-base-patch32`
+with civic prompts for potholes, road damage, street lights, garbage,
+electricity, water, and drainage, plus distractor prompts for unrelated images.
+
+The classifier does not treat the top-ranked label as automatically correct.
+It requires a minimum score of `0.55`, a lead of at least `0.10` over the next
+strongest prompt, and a non-blurry image before setting `is_confident=true`.
+If a distractor wins, the service returns `category="other"` and
+`is_civic=false`. The client also uses `other` as its initial category when the
+result is ambiguous, so garbage or unrelated images cannot silently become an
+electricity, pothole, or other specific complaint.
 
 ---
 

@@ -22,7 +22,7 @@ Key requirements:
 
 The project uses a single **global `.env` file** placed in the project root. Both the Flutter client and the Node.js server read their configurations from this single source.
 
-Create a `.env` file in the project root directory:
+Create one `.env` file in the project root directory:
 ```ini
 # === CLIENT CONFIGURATIONS ===
 API_BASE_URL=http://10.0.2.2:5000/api
@@ -37,6 +37,10 @@ AI_SERVICE_URL=http://localhost:8000
 ```
 
 > [!IMPORTANT]
+> Flutter bundles `.env` into the application asset bundle. This unified setup is
+> intended for local development only; never put private production secrets in
+> an environment file shipped with a client application.
+>
 > **Mobile Client Emulator IP Configuration**:
 > - **Android Emulator**: Use `http://10.0.2.2:5000/api` for `API_BASE_URL`. The Android sandbox maps `10.0.2.2` to the host machine's `localhost`.
 > - **iOS Simulator / Web**: Use `http://localhost:5000/api` directly.
@@ -74,6 +78,13 @@ npm start
 When running `npm run dev`, concurrently will start:
 * Express server at `http://localhost:5000` (reloads on file changes).
 * Python FastAPI microservice at `http://localhost:8000` (reloads on file changes).
+
+The Android app must be able to reach both services through the Express server.
+For a physical Android device, replace `10.0.2.2` with the host computer's
+active Wi-Fi IPv4 address, for example:
+`http://192.168.29.115:5000/api`. Do not use an automatic fallback address in
+the `169.254.x.x` range. The phone and computer must be on the same network,
+and the Express server must listen on an address reachable from the device.
 
 ---
 

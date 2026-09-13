@@ -13,6 +13,9 @@ const sla = require('../config/sla');
 const config = require('../config/env');
 const { wardFilter, officerCoversWard } = require('../config/wards');
 const issueController = require('../controllers/issueController');
+const notificationService = require('../services/notificationService');
+const verification = require('../services/verification');
+const { referenceFor } = require('../config/reference');
 
 const getUserIdFromRequest = (req) => {
   const authHeader = req.header('Authorization');
@@ -91,6 +94,17 @@ const upload = multer({
  * previous backend and still parse that shape. Every caller goes through here
  * so a new field cannot land on one endpoint and go missing on another.
  */
+/** The photo from the last time an officer claimed this was fixed. */
+const latestResolutionPhoto = (issue) => {
+  const history = issue.statusHistory || [];
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    if (history[i].status === 'Resolved' && history[i].photoUrl) {
+      return history[i].photoUrl;
+    }
+  }
+  return '';
+};
+
 const serializeIssue = (issue, { userVote = null, includeHistory = false } = {}) => {
   // Populated only when the query asked for it; an unpopulated userId is an
   // ObjectId, which is also typeof 'object', so test for a real field instead.
@@ -118,6 +132,23 @@ const serializeIssue = (issue, { userVote = null, includeHistory = false } = {})
     due_at: sla.dueDate(issue),
     is_overdue: sla.isOverdue(issue),
     closed_at: issue.closedAt || null,
+    // Who may answer the verification question. Clustering means this can
+    // be several accounts, so user_id alone is not enough for the client.
+    reporter_ids: (issue.reporters && issue.reporters.length > 0
+      ? issue.reporters
+      : [issue.userId]
+    ).filter(Boolean).map((r) => r.toString()),
+    reference: referenceFor(issue),
+    // The photo attached to the most recent Resolved claim, which is what
+    // the citizen is shown beside the original when asked to confirm.
+    resolution_photo_url: latestResolutionPhoto(issue),
+    verification_state: (issue.verification && issue.verification.state) || 'none',
+    verification_due_by: (issue.verification && issue.verification.dueBy) || null,
+    verification_note: (issue.verification && issue.verification.note) || '',
+    verification_evidence_url:
+      (issue.verification && issue.verification.evidenceUrl) || '',
+    escalated_at: issue.escalatedAt || null,
+    reopen_count: issue.reopenCount || 0,
     timestamp: issue.createdAt,
     created_at: issue.createdAt,
     user: {
@@ -131,6 +162,7 @@ const serializeIssue = (issue, { userVote = null, includeHistory = false } = {})
       status: entry.status,
       changed_at: entry.changedAt,
       note: entry.note || '',
+      photo_url: entry.photoUrl || '',
     }));
   }
 
@@ -258,6 +290,10 @@ router.get('/user', auth, async (req, res) => {
 // @access  Admin
 router.get('/stats', auth, admin, async (req, res) => {
   try {
+
+    // Silence is assent: settle any verification windows that have run out
+    // before counting, so the numbers below never include limbo rows.
+    await verification.settleExpired();
     // Read-and-reduce rather than an aggregation pipeline: the overdue test is
     // per-category window arithmetic that Mongo cannot express cheaply, and at
     // municipal-ward volumes this stays well inside a single round trip.
@@ -317,6 +353,10 @@ router.get('/queue', auth, admin, async (req, res) => {
   const { status, category, limit = 100 } = req.query;
 
   try {
+
+    // Silence is assent: settle any verification windows that have run out
+    // before counting, so the numbers below never include limbo rows.
+    await verification.settleExpired();
     const filter = { ...wardFilter(req.user.wards) };
     if (status) filter.status = status;
     if (category) filter.category = category;
@@ -326,14 +366,41 @@ router.get('/queue', auth, admin, async (req, res) => {
       .lean();
 
     const now = new Date();
-
-    // Triage order: what is late, then what the most people are waiting on,
-    // then what has been waiting longest.
+    
+    // Triage order: Dynamic Priority Score P
     const ranked = issues
-      .map((issue) => ({ ...issue, overdue: sla.isOverdue(issue, now) }))
+      .map((issue) => {
+        const N = issue.reportCount || 1;
+        const Va = issue.agreeCount || 0;
+        const Vd = issue.disagreeCount || 0;
+        const Sai = issue.severityScore || 2; // Default if not analyzed
+        
+        // SLA timing calculation
+        const createdAt = issue.createdAt ? new Date(issue.createdAt).getTime() : now.getTime();
+        const dueAt = sla.dueDate(issue).getTime();
+        const TSlaTotal = dueAt - createdAt;
+        const TRemaining = dueAt - now.getTime();
+        
+        // Decay factor in [0, 1]
+        let timeFactor = 0;
+        if (TSlaTotal > 0) {
+          timeFactor = Math.max(0, (TSlaTotal - TRemaining) / TSlaTotal);
+        }
+        
+        // Prevent Math.log2 from crashing if N is missing/negative
+        const wr = 2.5, wv = 1.0, ws = 2.0, wt = 3.0;
+        const P = (wr * Math.log2(1 + N)) +
+                  (wv * (Va - Vd)) +
+                  (ws * Sai) +
+                  (wt * timeFactor);
+
+        return { ...issue, priorityScore: P, overdue: sla.isOverdue(issue, now) };
+      })
       .sort((a, b) => {
-        if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
-        if (b.agreeCount !== a.agreeCount) return b.agreeCount - a.agreeCount;
+        // High priority score first
+        if (b.priorityScore !== a.priorityScore) {
+          return b.priorityScore - a.priorityScore;
+        }
         return new Date(a.createdAt) - new Date(b.createdAt);
       })
       .slice(0, parseInt(limit));
@@ -341,9 +408,11 @@ router.get('/queue', auth, admin, async (req, res) => {
     const userVotes = await voteMapFor(req.user.id, ranked);
 
     res.json(
-      ranked.map((issue) =>
-        serializeIssue(issue, { userVote: userVotes[issue._id.toString()] || null })
-      )
+      ranked.map((issue) => {
+        const serialized = serializeIssue(issue, { userVote: userVotes[issue._id.toString()] || null });
+        serialized.priority_score = issue.priorityScore;
+        return serialized;
+      })
     );
   } catch (err) {
     console.error(err.message);
@@ -351,7 +420,46 @@ router.get('/queue', auth, admin, async (req, res) => {
   }
 });
 
+// @route   GET api/issues/nearby-candidates
+// @desc    Interactive Proximity Interceptor
+router.get('/nearby-candidates', auth, async (req, res) => {
+  const { lat, lng, category, radius = 25 } = req.query;
+
+  if (lat === undefined || lng === undefined) {
+    return res.status(400).json({ message: 'Latitude and longitude required' });
+  }
+
+  const targetLat = Number.parseFloat(lat);
+  const targetLng = Number.parseFloat(lng);
+  const radiusKm = Number.parseFloat(radius) / 1000.0;
+  const EARTH_RADIUS_KM = 6378.1;
+
+  try {
+    const filter = {
+      status: { $nin: ['Resolved', 'Rejected'] },
+      location: {
+        $geoWithin: {
+          $centerSphere: [[targetLng, targetLat], radiusKm / EARTH_RADIUS_KM],
+        },
+      },
+    };
+    if (category) filter.category = category;
+
+    const issues = await Issue.find(filter)
+      .sort({ createdAt: -1 })
+      .populate('userId', 'username avatarUrl')
+      .lean();
+
+    res.json(issues.map((issue) => serializeIssue(issue)));
+  } catch (err) {
+    console.error('Candidates error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
 // @route   GET api/issues/:id
+
 // @desc    Get single issue details
 // @access  Public
 router.get('/:id', async (req, res) => {
@@ -386,7 +494,7 @@ router.get('/:id', async (req, res) => {
 // @desc    Move a complaint through its lifecycle
 // @access  Admin
 router.patch('/:id/status', auth, admin, async (req, res) => {
-  const { status, note } = req.body;
+  const { status, note, photo_url: photoUrl } = req.body;
 
   try {
     const allowed = Issue.schema.path('status').enumValues;
@@ -407,6 +515,15 @@ router.patch('/:id/status', auth, admin, async (req, res) => {
       });
     }
 
+    // An officer cannot claim a fix without showing it. Only Resolved is
+    // held to this: Rejected is the municipality declining to act, which
+    // has nothing to photograph.
+    if (status === 'Resolved' && !(photoUrl || '').trim()) {
+      return res.status(400).json({
+        message: 'A photo of the completed work is required to resolve a complaint',
+      });
+    }
+
     if (issue.status === status) {
       return res.status(200).json(serializeIssue(issue, { includeHistory: true }));
     }
@@ -419,6 +536,7 @@ router.patch('/:id/status', auth, admin, async (req, res) => {
       changedBy: req.user.id,
       changedAt: now,
       note: (note || '').trim(),
+      photoUrl: (photoUrl || '').trim(),
     });
 
     // Stamp the first closure, and clear it if the complaint is reopened, so
@@ -429,7 +547,68 @@ router.patch('/:id/status', auth, admin, async (req, res) => {
       issue.closedAt = null;
     }
 
+    // A claimed fix is not a fix until the person who reported it agrees.
+    //
+    // Only 'Resolved' opens a verification window. 'Rejected' is the
+    // municipality declining to act, which is a decision rather than a claim
+    // about the world, so there is nothing for the reporter to contradict.
+    if (status === 'Resolved') {
+      issue.verification.state = 'pending';
+      issue.verification.askedAt = now;
+      issue.verification.dueBy = verification.verificationDeadline(now);
+      issue.verification.respondedAt = null;
+      issue.verification.respondedBy = null;
+      issue.verification.note = '';
+      issue.verification.evidenceUrl = '';
+    } else if (issue.verification.state === 'pending') {
+      // Moved off Resolved before anybody answered, so the question is moot.
+      issue.verification.state = 'none';
+      issue.verification.dueBy = null;
+    }
+
     await issue.save();
+
+    // Everyone who reported it hears about it, not just the original filer:
+    // clustering means one complaint can carry several reporters.
+    const reporters =
+      issue.reporters && issue.reporters.length > 0 ? issue.reporters : [issue.userId];
+
+    const reference = referenceFor(issue);
+    const trimmedNote = (note || '').trim();
+    const messages = {
+      'In Progress': [
+        'Work started',
+        reference + ' has been picked up by your ward office.',
+      ],
+      Resolved: [
+        'Is this actually fixed?',
+        reference + ' was marked resolved. Confirm the fix, or reopen it if the problem is still there.',
+      ],
+      Rejected: [
+        'Complaint closed',
+        reference + ' was closed without action' + (trimmedNote ? ': ' + trimmedNote : '.'),
+      ],
+      Pending: ['Complaint reopened', reference + ' is back in the queue.'],
+    };
+    const [title, body] = messages[status] || [
+      'Complaint updated',
+      reference + ' is now ' + status + '.',
+    ];
+
+    try {
+      await notificationService.fanOut({
+        recipients: reporters,
+        issue,
+        type: status === 'Resolved' ? 'verification_requested' : 'status_changed',
+        title,
+        body,
+        exclude: [req.user.id],
+      });
+    } catch (notifyErr) {
+      // The status change is already committed and is what the officer asked
+      // for. A failed notification must not surface as a failed update.
+      console.error('[notify] status fan-out failed:', notifyErr.message);
+    }
 
     res.json(serializeIssue(issue, { includeHistory: true }));
   } catch (err) {
@@ -527,6 +706,166 @@ router.get('/:id/upvote/count', async (req, res) => {
     res.json({ count });
   } catch (err) {
     console.error(err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+const memoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_PHOTO_BYTES },
+  fileFilter: (req, file, cb) => {
+    cb(null, true);
+  }
+});
+
+// @route   POST api/issues/classify
+// @desc    Pre-Submission AI Classification
+router.post('/classify', auth, memoryUpload.single('photo'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+
+    const aiUrl = config.aiServiceUrl || 'http://localhost:8000';
+    const formData = new FormData();
+    const blob = new Blob([req.file.buffer], { type: req.file.mimetype });
+    formData.append('file', blob, req.file.originalname);
+
+    const response = await fetch(`${aiUrl}/api/v1/classify`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json(await response.json());
+    }
+
+    res.json(await response.json());
+  } catch (err) {
+    console.error('Classification error:', err);
+    res.status(500).json({ message: 'Server classification error' });
+  }
+});
+
+// @route   POST api/issues/:id/attach-evidence
+// @desc    Append user photo to existing issue
+router.post('/:id/attach-evidence', auth, async (req, res) => {
+  const { imageUrls } = req.body;
+  
+  if (!imageUrls || !imageUrls.length) {
+    return res.status(400).json({ message: 'imageUrls array required' });
+  }
+
+  try {
+    const issue = await Issue.findById(req.params.id);
+    if (!issue) return res.status(404).json({ message: 'Issue not found' });
+
+    issue.imageUrls.push(...imageUrls);
+    
+    // Convert ObjectIds to strings for Set comparison
+    const existingReporters = issue.reporters.map(id => id.toString());
+    if (!existingReporters.includes(req.user.id)) {
+      issue.reporters.push(req.user.id);
+      issue.reportCount += 1;
+    }
+
+    await issue.save();
+    res.json(serializeIssue(issue.toObject()));
+  } catch (err) {
+    console.error('Attach evidence error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   POST api/issues/:id/verify
+// @desc    The reporter confirms or disputes a claimed fix
+// @access  Private — reporters of this complaint only
+router.post('/:id/verify', auth, async (req, res) => {
+  const { confirmed, note, evidence_url: evidenceUrl } = req.body;
+
+  if (typeof confirmed !== 'boolean') {
+    return res.status(400).json({ message: 'confirmed must be true or false' });
+  }
+
+  try {
+    const issue = await Issue.findById(req.params.id);
+    if (!issue) {
+      return res.status(404).json({ message: 'Issue not found' });
+    }
+
+    // Only the people who reported it get to say whether it is fixed, and
+    // clustering means that can be several accounts rather than just `userId`.
+    const reporters =
+      issue.reporters && issue.reporters.length > 0 ? issue.reporters : [issue.userId];
+    const isReporter = reporters.some((r) => String(r) === String(req.user.id));
+    if (!isReporter) {
+      return res.status(403).json({
+        message: 'Only the people who reported this complaint can verify the fix',
+      });
+    }
+
+    if (issue.verification.state !== 'pending') {
+      return res.status(409).json({
+        message: 'This complaint is not awaiting verification',
+        state: issue.verification.state,
+      });
+    }
+
+    const now = new Date();
+    issue.verification.respondedAt = now;
+    issue.verification.respondedBy = req.user.id;
+    issue.verification.note = (note || '').trim();
+
+    if (confirmed) {
+      // Status stays Resolved and closedAt stands: the officer was right.
+      issue.verification.state = 'confirmed';
+    } else {
+      issue.verification.state = 'disputed';
+      issue.verification.evidenceUrl = (evidenceUrl || '').trim();
+
+      // The fix did not hold, so the complaint goes back into the queue. The
+      // SLA clock is deliberately not reset — it measures time from report to
+      // confirmed fix, and a dispute is proof it was never fixed — which makes
+      // a reopened complaint overdue by construction and sorts it to the top.
+      issue.status = 'In Progress';
+      issue.closedAt = null;
+      issue.escalatedAt = now;
+      issue.reopenCount = (issue.reopenCount || 0) + 1;
+      issue.statusHistory.push({
+        status: 'In Progress',
+        changedBy: req.user.id,
+        changedAt: now,
+        note: issue.verification.note || 'Reporter disputed the claimed fix',
+      });
+    }
+
+    issue.updatedAt = now;
+    await issue.save();
+
+    if (!confirmed) {
+      // Tell the officer who claimed the fix that it was rejected. Walking the
+      // history backwards finds whoever last set it Resolved.
+      const claimer = [...issue.statusHistory]
+        .reverse()
+        .find((e) => e.status === 'Resolved' && e.changedBy);
+
+      try {
+        await notificationService.fanOut({
+          recipients: claimer ? [claimer.changedBy] : [],
+          issue,
+          type: 'verification_disputed',
+          title: 'Reported fix rejected',
+          body:
+            referenceFor(issue) +
+            ' was reopened by the reporter and is now escalated.',
+          exclude: [req.user.id],
+        });
+      } catch (notifyErr) {
+        console.error('[notify] dispute fan-out failed:', notifyErr.message);
+      }
+    }
+
+    res.json(serializeIssue(issue, { includeHistory: true }));
+  } catch (err) {
+    console.error('Verify error:', err.message);
     res.status(500).json({ message: 'Server error' });
   }
 });
