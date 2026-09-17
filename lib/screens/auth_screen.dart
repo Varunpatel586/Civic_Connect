@@ -1,23 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-
+import 'package:civic_connect/services/auth_service.dart';
 import '../providers/app_provider.dart';
-import '../services/auth_service.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
-import '../theme/app_typography.dart';
 
 enum AuthView { login, signup }
 
-/// Sign-in and registration.
-///
-/// Presented as a masthead over a form rather than a centred hero: the point
-/// of the screen is to state which body operates the service before asking for
-/// credentials, the way a government portal does.
 class AuthScreen extends StatefulWidget {
   final AuthView initialView;
 
-  const AuthScreen({super.key, this.initialView = AuthView.login});
+  const AuthScreen({
+    super.key,
+    this.initialView = AuthView.login,
+  });
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -27,11 +22,21 @@ class _AuthScreenState extends State<AuthScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _usernameController = TextEditingController();
+
+  late bool _isLogin;
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+
+  // Figma design has Citizen selected by default
+  bool _isCitizen = true;
+
   final _formKey = GlobalKey<FormState>();
 
-  late bool _isLogin = widget.initialView == AuthView.login;
-  bool _obscurePassword = true;
-  bool _isLoading = false;
+  @override
+  void initState() {
+    super.initState();
+    _isLogin = widget.initialView == AuthView.login;
+  }
 
   @override
   void dispose() {
@@ -41,22 +46,17 @@ class _AuthScreenState extends State<AuthScreen> {
     super.dispose();
   }
 
-  void _toggleAuthView() {
-    setState(() {
-      _isLogin = !_isLogin;
-      _formKey.currentState?.reset();
-    });
-  }
-
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
-    final appProvider = context.read<AppProvider>();
-    final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
+    setState(() {
+      _isLoading = true;
+    });
 
     try {
+      final appProvider =
+          Provider.of<AppProvider>(context, listen: false);
+
       if (_isLogin) {
         await appProvider.signIn(
           _emailController.text.trim(),
@@ -69,370 +69,452 @@ class _AuthScreenState extends State<AuthScreen> {
           _usernameController.text.trim(),
         );
       }
-      if (mounted) navigator.pushReplacementNamed('/home');
+
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/home');
+      }
     } on AppAuthException catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message)),
+        );
+      }
     } catch (e) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Something went wrong. Try again.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('An error occurred'),
+          ),
+        );
+      }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
-  Future<void> _signInWithGoogle() async {
-    setState(() => _isLoading = true);
-    final appProvider = context.read<AppProvider>();
-    final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
+  void _toggleAuthView() {
+    setState(() {
+      _isLogin = !_isLogin;
+      _formKey.currentState?.reset();
+    });
+  }
 
-    try {
-      await appProvider.signInWithGoogle();
-      if (mounted) navigator.pushReplacementNamed('/home');
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Google sign-in failed: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+  InputDecoration _fieldDecoration({
+    required String hint,
+    IconData? icon,
+  }) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: GoogleFonts.poppins(
+        fontSize: 14,
+        color: const Color(0xFF444444),
+        fontWeight: FontWeight.w400,
+      ),
+      prefixIcon: icon == null
+          ? null
+          : Icon(
+              icon,
+              color: const Color(0xFF444444),
+              size: 20,
+            ),
+      filled: true,
+      fillColor: const Color(0xFFD9D9D9),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(30),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(30),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(30),
+        borderSide: const BorderSide(
+          color: Colors.black,
+          width: 1,
+        ),
+      ),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 20,
+        vertical: 16,
+      ),
+    );
+  }
+
+  Widget _buildRoleToggle() {
+    return Container(
+      height: 38,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFD9D9D9),
+        borderRadius: BorderRadius.circular(25),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _isCitizen = false;
+                });
+              },
+              child: Container(
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: !_isCitizen
+                      ? Colors.white
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Text(
+                  'Admin',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _isCitizen = true;
+                });
+              },
+              child: Container(
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: _isCitizen
+                      ? Colors.white
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Text(
+                  'Citizen',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF4F7F5),
       body: SafeArea(
-        top: false,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _Masthead(),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 26, 20, 32),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _ModeToggle(
-                        isLogin: _isLogin,
-                        enabled: !_isLoading,
-                        onChanged: (login) {
-                          if (login != _isLogin) _toggleAuthView();
-                        },
-                      ),
-                      const SizedBox(height: 22),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 24,
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: 390,
+                    minWidth: 320,
+                  ),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 25),
 
-                      if (!_isLogin) ...[
-                        _Field(
-                          label: 'Username',
-                          controller: _usernameController,
-                          icon: Icons.badge_outlined,
-                          hint: 'How you will appear on complaints',
-                          validator: (value) {
-                            final v = value?.trim() ?? '';
-                            if (v.isEmpty) return 'Choose a username';
-                            if (v.length < 3) {
-                              return 'Use at least 3 characters';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 14),
-                      ],
-
-                      _Field(
-                        label: 'Email',
-                        controller: _emailController,
-                        icon: Icons.alternate_email,
-                        keyboardType: TextInputType.emailAddress,
-                        validator: (value) {
-                          final v = value?.trim() ?? '';
-                          if (v.isEmpty) return 'Enter your email';
-                          final pattern = RegExp(
-                            r'^[\w.\-+]+@([\w\-]+\.)+[\w\-]{2,}$',
-                          );
-                          if (!pattern.hasMatch(v)) {
-                            return 'That does not look like an email address';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 14),
-
-                      _Field(
-                        label: 'Password',
-                        controller: _passwordController,
-                        icon: Icons.lock_outline,
-                        obscure: _obscurePassword,
-                        suffix: IconButton(
-                          icon: Icon(
-                            _obscurePassword
-                                ? Icons.visibility_outlined
-                                : Icons.visibility_off_outlined,
-                            size: 19,
-                            color: AppColors.slate400,
-                          ),
-                          onPressed: () => setState(
-                            () => _obscurePassword = !_obscurePassword,
-                          ),
-                        ),
-                        validator: (value) {
-                          final v = value ?? '';
-                          if (v.isEmpty) return 'Enter your password';
-                          if (!_isLogin && v.length < 6) {
-                            return 'Use at least 6 characters';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 22),
-
-                      ElevatedButton(
-                        onPressed: _isLoading ? null : _submit,
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Text(_isLogin ? 'Sign in' : 'Create account'),
-                      ),
-
-                      const SizedBox(height: 18),
-                      const _OrRule(),
-                      const SizedBox(height: 18),
-
-                      OutlinedButton.icon(
-                        onPressed: _isLoading ? null : _signInWithGoogle,
-                        icon: const Icon(
-                          Icons.account_circle_outlined,
-                          size: 19,
-                        ),
-                        label: const Text('Continue with Google'),
-                      ),
-
-                      const SizedBox(height: 20),
-                      Center(
-                        child: TextButton(
-                          onPressed: _isLoading ? null : _toggleAuthView,
+                        // LOGO
+                        Container(
+                          width: 90,
+                          height: 95,
+                          alignment: Alignment.center,
                           child: Text(
-                            _isLogin
-                                ? 'No account? Register to report issues'
-                                : 'Already registered? Sign in',
+                            'C',
+                            style: GoogleFonts.poppins(
+                              fontSize: 82,
+                              height: .8,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.black,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+
+                        const SizedBox(height: 15),
+
+                        Text(
+                          'Civic Connect',
+                          style: GoogleFonts.poppins(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black,
+                          ),
+                        ),
+
+                        const SizedBox(height: 22),
+
+                        Text(
+                          'Report and track Civic\n'
+                          'Issues in your Community',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            height: 1.35,
+                            color: Colors.black,
+                          ),
+                        ),
+
+                        const SizedBox(height: 32),
+
+                        // LOGIN CARD
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.fromLTRB(
+                            28,
+                            18,
+                            28,
+                            24,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(.10),
+                                blurRadius: 18,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children: [
+                              // ADMIN / CITIZEN
+                              if (_isLogin) ...[
+                                _buildRoleToggle(),
+                                const SizedBox(height: 30),
+                              ],
+
+                              // USERNAME - SIGNUP ONLY
+                              if (!_isLogin) ...[
+                                TextFormField(
+                                  controller: _usernameController,
+                                  decoration: _fieldDecoration(
+                                    hint: 'Username',
+                                  ),
+                                  validator: (value) {
+                                    if (value == null ||
+                                        value.trim().isEmpty) {
+                                      return 'Please enter a username';
+                                    }
+
+                                    if (value.trim().length < 3) {
+                                      return 'Username must be at least 3 characters';
+                                    }
+
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 14),
+                              ],
+
+                              // EMAIL
+                              TextFormField(
+                                controller: _emailController,
+                                keyboardType:
+                                    TextInputType.emailAddress,
+                                decoration: _fieldDecoration(
+                                  hint: 'Email',
+                                ),
+                                validator: (value) {
+                                  if (value == null ||
+                                      value.trim().isEmpty) {
+                                    return 'Please enter your email';
+                                  }
+
+                                  final emailRegex = RegExp(
+                                    r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                                  );
+
+                                  if (!emailRegex
+                                      .hasMatch(value.trim())) {
+                                    return 'Please enter a valid email';
+                                  }
+
+                                  return null;
+                                },
+                              ),
+
+                              const SizedBox(height: 12),
+
+                              // PASSWORD
+                              TextFormField(
+                                controller: _passwordController,
+                                obscureText: _obscurePassword,
+                                decoration:
+                                    _fieldDecoration(
+                                  hint: 'Password',
+                                ).copyWith(
+                                  suffixIcon: IconButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _obscurePassword =
+                                            !_obscurePassword;
+                                      });
+                                    },
+                                    icon: Icon(
+                                      _obscurePassword
+                                          ? Icons.visibility_outlined
+                                          : Icons.visibility_off_outlined,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ),
+                                validator: (value) {
+                                  if (value == null ||
+                                      value.isEmpty) {
+                                    return 'Please enter your password';
+                                  }
+
+                                  if (value.length < 6) {
+                                    return 'Password must be at least 6 characters';
+                                  }
+
+                                  return null;
+                                },
+                              ),
+
+                              const SizedBox(height: 25),
+
+                              // BLACK LOGIN BUTTON
+                              SizedBox(
+                                width: double.infinity,
+                                height: 56,
+                                child: ElevatedButton(
+                                  onPressed:
+                                      _isLoading ? null : _submit,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.black,
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(30),
+                                    ),
+                                  ),
+                                  child: _isLoading
+                                      ? const SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child:
+                                              CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : Text(
+                                          _isLogin
+                                              ? 'Log In'
+                                              : 'Create Account',
+                                          style:
+                                              GoogleFonts.poppins(
+                                            fontSize: 15,
+                                            fontWeight:
+                                                FontWeight.w500,
+                                          ),
+                                        ),
+                                ),
+                              ),
+
+                              const SizedBox(height: 8),
+
+                              // CREATE ACCOUNT / LOGIN BUTTON
+                              SizedBox(
+                                width: double.infinity,
+                                height: 56,
+                                child: OutlinedButton(
+                                  onPressed: _isLoading
+                                      ? null
+                                      : _toggleAuthView,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.black,
+                                    side: const BorderSide(
+                                      color: Color(0xFFD5D5D5),
+                                      width: 2,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(30),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _isLogin
+                                        ? 'Create Account'
+                                        : 'Back to Login',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 55),
+
+                        // HELP BUTTON
+                        Align(
+                          alignment: Alignment.bottomRight,
+                          child: Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: const Color(0xFFF4F7F5),
+                              border: Border.all(
+                                color: Colors.black,
+                                width: 2,
+                              ),
+                            ),
+                            child: IconButton(
+                              onPressed: () {
+                                ScaffoldMessenger.of(context)
+                                    .showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Help and support coming soon.',
+                                    ),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(
+                                Icons.question_mark,
+                                color: Colors.black,
+                                size: 22,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
-    );
-  }
-}
-
-/// Who runs this, and what it is for.
-///
-/// Was a navy slab, which is how software looked when the chrome was the
-/// brand. The wordmark carries the identity on its own; the ward line above it
-/// says whose service this is without painting the wall behind it.
-class _Masthead extends StatelessWidget {
-  const _Masthead();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 76, 20, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(width: 22, height: 2, color: AppColors.amber700),
-              const SizedBox(width: 10),
-              Text(
-                'Municipal services',
-                style: AppTypography.sectionLabel(color: AppColors.slate600),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Civic Connect',
-            style: Theme.of(
-              context,
-            ).textTheme.headlineMedium?.copyWith(fontSize: 32),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Report a civic issue, track it to resolution, and see what '
-            'your neighbours have already raised.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Sign in / Register, as one control rather than a hidden mode.
-class _ModeToggle extends StatelessWidget {
-  final bool isLogin;
-  final bool enabled;
-  final ValueChanged<bool> onChanged;
-
-  const _ModeToggle({
-    required this.isLogin,
-    required this.enabled,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: AppColors.slate100,
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _ModeTab(
-              label: 'Sign in',
-              selected: isLogin,
-              onTap: enabled ? () => onChanged(true) : null,
-            ),
-          ),
-          Expanded(
-            child: _ModeTab(
-              label: 'Register',
-              selected: !isLogin,
-              onTap: enabled ? () => onChanged(false) : null,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ModeTab extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  const _ModeTab({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? AppColors.surface : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppTheme.radius - 3),
-          boxShadow: selected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x120F1F35),
-                    blurRadius: 3,
-                    offset: Offset(0, 1),
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: selected ? AppColors.navy900 : AppColors.slate400,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Field extends StatelessWidget {
-  final String label;
-  final TextEditingController controller;
-  final IconData icon;
-  final String? hint;
-  final bool obscure;
-  final Widget? suffix;
-  final TextInputType? keyboardType;
-  final String? Function(String?) validator;
-
-  const _Field({
-    required this.label,
-    required this.controller,
-    required this.icon,
-    required this.validator,
-    this.hint,
-    this.obscure = false,
-    this.suffix,
-    this.keyboardType,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: AppTypography.sectionLabel(color: AppColors.slate600),
-        ),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: controller,
-          obscureText: obscure,
-          keyboardType: keyboardType,
-          validator: validator,
-          decoration: InputDecoration(
-            hintText: hint,
-            prefixIcon: Icon(icon, size: 19, color: AppColors.slate400),
-            suffixIcon: suffix,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _OrRule extends StatelessWidget {
-  const _OrRule();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const Expanded(child: Divider()),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Text('or', style: AppTypography.meta()),
-        ),
-        const Expanded(child: Divider()),
-      ],
     );
   }
 }
