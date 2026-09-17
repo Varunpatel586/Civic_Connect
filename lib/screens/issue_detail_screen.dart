@@ -364,8 +364,8 @@ class _EvidenceState extends State<_Evidence> {
         ? widget.issue.imageUrls
         : [widget.issue.imageUrl];
 
-    return AspectRatio(
-      aspectRatio: 4 / 3,
+    return SizedBox(
+      height: MediaQuery.of(context).size.width > 600 ? 280 : 280,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -378,7 +378,7 @@ class _EvidenceState extends State<_Evidence> {
             },
             itemBuilder: (context, index) {
               return CachedNetworkImage(
-                imageUrl: ApiClient().normalizeUrl(urls[index]),
+                imageUrl: urls[index],
                 fit: BoxFit.cover,
                 fadeInDuration: const Duration(milliseconds: 180),
                 placeholder: (context, url) =>
