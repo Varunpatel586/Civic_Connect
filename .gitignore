@@ -40,6 +40,9 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+**/build/
+**/.gradle/
+**/node_modules/
 /coverage/
 
 # Symbolication related
