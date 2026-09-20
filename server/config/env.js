@@ -69,6 +69,7 @@ function loadConfig() {
     mongoUri: required('MONGO_URI'),
     jwtSecret,
     apiUrl: optional('API_URL', 'http://localhost:5000'),
+    aiServiceUrl: optional('AI_SERVICE_URL', ''),
     googleClientIds: optional('GOOGLE_CLIENT_IDS', optional('GOOGLE_CLIENT_ID', ''))
       .split(',')
       .map((id) => id.trim())
