@@ -56,6 +56,11 @@ Located in [issue_submission_screen.dart](../lib/screens/issue_submission_screen
   - The form is a stack of cards (`_Section`): Category, What is wrong, Location.
   - `_CategoryPicker` is a **grid of chips**, not a dropdown — eight options is few enough to show at once, and seeing them all helps a citizen pick the right one.
   - `_EvidenceStrip` shows the captured photo plus a thumbnail rail for extra images added via `image_picker`.
+  - Runs an AI preflight classification for the captured photo before filing.
+    Confident results can select a category automatically; ambiguous, non-civic,
+    or blurry results leave category selection to the citizen.
+  - Uncertain results start at `Other` and display the server-provided reason
+    when manual confirmation is required.
   - `_LocationCard` renders three states: locating, resolved (address plus coordinates in the record face), and unavailable (an amber block with a retry).
   - Uploads images to `/issues/upload` via `ApiClient().uploadMultipart`, then files through `AppProvider.reportIssue` so the feed and the citizen's own list both refresh.
   - Filing is disabled until a location is available.
@@ -80,7 +85,8 @@ Located in [map_screen.dart](../lib/screens/map_screen.dart).
 - **Purpose**: Complaints plotted where they were reported.
 - **Features**:
   - OpenStreetMap tiles via `flutter_map` — no API key, no billing account, nothing to configure before it works.
-  - `_ComplaintPin` colours each pin by state (overdue wins over the stored status); `_YouAreHere` marks the citizen.
+  - Camera starts centered on the user's mock location (zoom level 15) to prevent starting at a zoomed-out global view, only fitting to all complaints as a fallback if the user location is unavailable.
+  - `_ComplaintPin` displays custom teardrop pins pointing down at the coordinates, rendering actual photo thumbnails (using `CachedNetworkImage` with custom status borders) or category icons as placeholders. Pins are color-coded based on status/overdue SLA.
   - Floating chrome that lifts off the map with shadow rather than borders: `_Legend`, `_MapButton` (centre on me / fit all complaints), and `_SelectedCard` for the tapped pin.
   - `_Attribution` is required by the OpenStreetMap licence — do not remove it.
   - Camera moves are gated on `onMapReady`; the controller throws if driven before `FlutterMap` attaches it.

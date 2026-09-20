@@ -33,6 +33,14 @@ const UserSchema = new mongoose.Schema({
     type: [String],
     default: [],
   },
+  // Registered FCM devices for this account. One user can have several
+  // (phone, tablet, a reinstall that issued a fresh token), so this is a set
+  // rather than a single field. Tokens FCM reports as permanently invalid are
+  // pruned on the next send.
+  deviceTokens: {
+    type: [String],
+    default: [],
+  },
   createdAt: {
     type: Date,
     default: Date.now,

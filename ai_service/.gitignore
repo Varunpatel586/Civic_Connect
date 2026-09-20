@@ -1,0 +1,10 @@
+# Python virtual environment
+venv/
+.venv/
+
+# Bytecode
+__pycache__/
+*.py[cod]
+
+# Local model cache
+.cache/
