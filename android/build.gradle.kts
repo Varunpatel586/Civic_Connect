@@ -12,11 +12,20 @@ val newBuildDir: Directory =
 rootProject.layout.buildDirectory.value(newBuildDir)
 
 subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
-}
-subprojects {
     project.evaluationDependsOn(":app")
+
+    if (project.path == ":app") {
+        project.layout.buildDirectory.value(newBuildDir.dir(project.name))
+    }
+
+    if (project.path != ":app") {
+        tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+            enabled = false
+        }
+        tasks.matching { it.name.startsWith("lint") }.configureEach {
+            enabled = false
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {

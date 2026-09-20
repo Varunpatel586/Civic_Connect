@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "MongoDB backend for Civic Connect mobile application",
   "main": "server.js",
+  "engines": {
+    "node": ">=20 <21"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "concurrently --names \"SERVER,AI-BOT\" --prefix-colors \"bgBlue.bold,bgMagenta.bold\" \"nodemon server.js\" \"node run-ai.js\"",
