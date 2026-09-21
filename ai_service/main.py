@@ -4,15 +4,24 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 import os
+import tempfile
+from urllib.request import Request, urlopen
 
 app = FastAPI(title="Civic Connect Local Vision Clustering")
 
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "classifier": "ready" if classifier is not None else "loading_or_unavailable",
+    }
+
 class CandidateImage(BaseModel):
     issue_id: str
-    image_paths: List[str]
+    image_urls: List[str]
 
 class SimilarityRequest(BaseModel):
-    target_image_path: str
+    target_image_url: str
     candidates: List[CandidateImage]
     min_inliers_threshold: Optional[int] = 25 
 
@@ -73,18 +82,16 @@ def compute_geometric_match(path1: str, path2: str) -> int:
         print(f"CV Error comparing {path1} & {path2}: {str(e)}")
         return 0
 
+def download_image(url: str, directory: str, name: str) -> str:
+    request = Request(url, headers={"User-Agent": "Civic-Connect-AI/1.0"})
+    destination = os.path.join(directory, name)
+    with urlopen(request, timeout=15) as response, open(destination, "wb") as output:
+        output.write(response.read())
+    return destination
+
 @app.post("/api/v1/compare", response_model=SimilarityResponse)
 async def compare_images(payload: SimilarityRequest):
-    # Log requests to a file for debugging
-    log_dir = os.path.dirname(__file__)
-    log_file_path = os.path.join(log_dir, "compare_debug.log")
-    
-    with open(log_file_path, "a") as log_file:
-        log_file.write(f"\n--- Request: target={os.path.basename(payload.target_image_path)}, threshold={payload.min_inliers_threshold} ---\n")
-
     if not payload.candidates:
-        with open(log_file_path, "a") as log_file:
-            log_file.write("No candidates provided.\n")
         return SimilarityResponse(
             is_duplicate=False, 
             matched_issue_id=None, 
@@ -95,24 +102,23 @@ async def compare_images(payload: SimilarityRequest):
     best_inlier_count = 0
     matched_id = None
 
-    # Transitive Clustering Check: Compare against ALL images in the cluster
-    for candidate in payload.candidates:
-        for img_path in candidate.image_paths:
-            inliers = compute_geometric_match(payload.target_image_path, img_path)
-            
-            log_line = f"Comparing {os.path.basename(payload.target_image_path)} to {os.path.basename(img_path)}: inliers = {inliers} (candidate issue={candidate.issue_id})\n"
-            print(log_line.strip())
-            with open(log_file_path, "a") as log_file:
-                log_file.write(log_line)
-                
-            if inliers > best_inlier_count:
-                best_inlier_count = inliers
-                matched_id = candidate.issue_id
+    # Render services have separate filesystems, so compare downloaded images.
+    with tempfile.TemporaryDirectory() as directory:
+        target_path = download_image(payload.target_image_url, directory, "target")
+        for candidate_index, candidate in enumerate(payload.candidates):
+            for image_index, image_url in enumerate(candidate.image_urls):
+                image_path = download_image(
+                    image_url,
+                    directory,
+                    f"candidate-{candidate_index}-{image_index}",
+                )
+                inliers = compute_geometric_match(target_path, image_path)
+                print(f"Compared candidate {candidate.issue_id}: inliers={inliers}")
+                if inliers > best_inlier_count:
+                    best_inlier_count = inliers
+                    matched_id = candidate.issue_id
 
     is_duplicate = bool(best_inlier_count >= payload.min_inliers_threshold)
-
-    with open(log_file_path, "a") as log_file:
-        log_file.write(f"Result: is_duplicate={is_duplicate}, highest_inliers={best_inlier_count}, matched_id={matched_id}\n")
 
     return SimilarityResponse(
         is_duplicate=is_duplicate,

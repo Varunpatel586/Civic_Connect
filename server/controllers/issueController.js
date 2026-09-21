@@ -24,8 +24,7 @@ exports.createIssue = async (req, res) => {
       if (fallbackUrl) {
         const filename = path.basename(fallbackUrl);
         uploadedImageUrl = `${hostUrl}/uploads/${filename}`;
-        // Resolve path to the uploads directory in the server directory
-        uploadedFile = path.resolve(__dirname, '../uploads', filename);
+        uploadedFile = `${hostUrl}/uploads/${filename}`;
       }
     }
 
@@ -66,15 +65,13 @@ exports.createIssue = async (req, res) => {
       // Step 2: If candidates exist, evaluate Image Similarity via FastAPI
       if (candidates.length > 0 && config.aiServiceUrl) {
         try {
-          // Map candidate image URLs to absolute local paths
-          // Since URLs are like /uploads/photo-xxx.jpg, we resolve them relative to the server/uploads dir
           const aiPayload = {
-            target_image_path: path.resolve(uploadedFile),
+            target_image_url: uploadedImageUrl,
             candidates: candidates.map(c => ({
               issue_id: c._id.toString(),
-              image_paths: c.imageUrls.map(img => {
+              image_urls: c.imageUrls.map(img => {
                 const filename = path.basename(img);
-                return path.resolve(__dirname, '../uploads', filename);
+                return `${hostUrl}/uploads/${filename}`;
               })
             })),
             min_inliers_threshold: 25

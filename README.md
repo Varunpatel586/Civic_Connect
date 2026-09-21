@@ -48,6 +48,9 @@ Flutter client  ──HTTP/JSON──▶  Express API  ──Mongoose──▶  
    lib/            + JWT          server/                   civic_connect
                                      │
                                      └─ multer → server/uploads/ (served at /uploads)
+                         │
+                         └─HTTP──▶ FastAPI vision service
+                                ai_service/
 ```
 
 The client never talks to the database. Field names cross the wire in
@@ -138,6 +141,11 @@ cd ai_service
 pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+For Render, deploy these as two separate web services from the repository
+Blueprint. The Node service exposes uploaded images at `/uploads`; the AI
+service downloads those public image URLs when it performs duplicate matching.
+The AI service does not share the Node service's filesystem.
 
 ### 3. Seed demo data (optional)
 

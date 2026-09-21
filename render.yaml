@@ -25,3 +25,15 @@ services:
       name: civic-connect-uploads
       mountPath: /opt/render/project/src/server/uploads
       sizeGB: 1
+
+  - type: web
+    name: civic-connect-ai
+    runtime: python
+    plan: standard
+    rootDir: ai_service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
