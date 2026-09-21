@@ -66,20 +66,15 @@ app.use(
   })
 );
 
-// Uploaded photographs. Immutable once written, so they cache indefinitely.
-app.use(
-  '/uploads',
-  express.static(path.join(__dirname, 'uploads'), {
-    maxAge: '30d',
-    immutable: true,
-    // These are user-supplied files; never let the browser guess a type for
-    // them or run one as a document.
-    setHeaders: (res) => {
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Content-Disposition', 'inline');
-    },
-  })
-);
+/**
+ * Uploaded photographs.
+ *
+ * Photographs live in MongoDB GridFS and are streamed out on request. Files
+ * that predate the migration — including the seed images — are still read
+ * from the legacy uploads directory, so nothing already referenced by a
+ * stored complaint breaks.
+ */
+app.use('/uploads', require('./routes/uploads'));
 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/issues', require('./routes/issues'));

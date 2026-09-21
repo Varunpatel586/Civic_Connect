@@ -13,7 +13,8 @@ The project separates frontend client views from backend database operations usi
 │   ├── middleware/      # jwt auth.js verification middleware
 │   ├── models/          # Mongoose Schemas (User.js, Issue.js, Comment.js, etc.)
 │   ├── routes/          # Express route controllers (auth.js, issues.js, comments.js)
-│   ├── uploads/         # Server folder storing uploaded image binaries
+│   ├── services/         # imageStore (GridFS photo storage), notifications
+│   ├── uploads/          # Legacy photo files, still served by /uploads
 │   ├── .env             # Server configurations
 │   ├── run-ai.js        # Helper script for running AI venv concurrently
 │   └── server.js        # Main Express application entrypoint
@@ -44,7 +45,7 @@ graph TD
     ApiClient -->|GET / POST / PUT REST Requests| Express[Express Server on port 5000]
     Express -->|Verifies JWT Tokens| Middleware[Auth Middleware]
     Express -->|Queries Mongoose Schemas| Mongo[(MongoDB Database)]
-    Express -->|Saves Image Binaries| Uploads[Local Uploads Folder]
+    Express -->|Compresses and stores photos| GridFS[(MongoDB GridFS)]
     Express -->|Classifies uploads and compares duplicates| FastAPI[FastAPI Microservice on port 8000]
     FastAPI -->|Zero-shot classification| CLIP[OpenAI CLIP]
     FastAPI -->|Geometric duplicate matching| OpenCV[OpenCV ORB + RANSAC]
@@ -103,7 +104,7 @@ sequenceDiagram
     U->>ISS: Tap Submit
     ISS->>AC: uploadMultipart('/issues/upload')
     AC->>EX: POST /issues/upload (Send File Stream)
-    EX->>EX: Save file to server/uploads/ folder
+    EX->>EX: Compress photo and store it in GridFS
     EX-->>AC: Return JSON with File URL
     AC-->>ISS: Parse Local Server File URL
     ISS->>AC: post('/issues', {title, category, imageUrl, lat, lng})

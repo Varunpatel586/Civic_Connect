@@ -21,10 +21,6 @@ services:
         sync: false
       - key: AI_SERVICE_URL
         sync: false
-    disk:
-      name: civic-connect-uploads
-      mountPath: /opt/render/project/src/server/uploads
-      sizeGB: 1
 
   - type: web
     name: civic-connect-ai

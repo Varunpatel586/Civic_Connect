@@ -36,11 +36,17 @@ such as `MONGO_URI` or `JWT_SECRET` in the Flutter environment file.
 
 ## Uploads and redeploys
 
-The API stores photographs in `server/uploads`. The Blueprint attaches a 1 GB
-Render persistent disk at that directory. Without a persistent disk, uploaded
-photographs can disappear when the service is redeployed or restarted while
-MongoDB still contains their URLs. Increase the disk or move uploads to object
-storage before production growth.
+Photographs are stored in MongoDB (GridFS) and re-encoded with `sharp` to a
+bounded JPEG on the way in, so no persistent disk is attached to the API
+service. Uploaded files survive redeploys and restarts for free, and the
+compression keeps the storage inside Atlas M0's 512 MB database ceiling: a
+5 MB phone photograph lands at a few hundred kilobytes. Files that predate the
+migration, and the seed images, are still served from the legacy
+`server/uploads/` directory by the same `/uploads/:filename` route.
+
+Keep an eye on MongoDB storage as the complaint count grows — the binary bytes
+share the database's cap with the application documents, and real production
+growth still wants object storage.
 
 ## AI clustering
 

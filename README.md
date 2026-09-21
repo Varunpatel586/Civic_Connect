@@ -47,7 +47,7 @@ what is late.
 Flutter client  ──HTTP/JSON──▶  Express API  ──Mongoose──▶  MongoDB
    lib/            + JWT          server/                   civic_connect
                                      │
-                                     └─ multer → server/uploads/ (served at /uploads)
+                                     └─ multer → sharp → MongoDB GridFS (served at /uploads)
                          │
                          └─HTTP──▶ FastAPI vision service
                                 ai_service/
@@ -207,9 +207,14 @@ filtering. Documents predating that field are migrated automatically on boot by
 
 ### Still not production-ready
 
-- **Photographs are stored on local disk** in `server/uploads/`. They do not
-  survive a container restart and do not scale past one host. Moving to object
-  storage is the one remaining structural change.
+- **Photographs are stored in MongoDB GridFS**, re-encoded with `sharp` to a
+  bounded JPEG (longest edge 1200 px, quality 70) on the way in. That keeps a
+  phone photograph at a few hundred kilobytes, which matters on Atlas M0 where
+  the entire database shares a 512 MB ceiling — raw uploads would lock the
+  database read-only after roughly a hundred reports. Files that predate the
+  migration are still served from `server/uploads/`. Real production growth
+  still wants object storage, because the binary bytes now compete with
+  application data for MongoDB's cache and its storage cap.
 - **No HTTPS in the development setup.** `usesCleartextTraffic` is enabled on
   Android so the emulator can reach a local HTTP server; turn it off and put the
   API behind TLS before this is reachable from a real network.

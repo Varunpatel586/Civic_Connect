@@ -3,6 +3,7 @@ const axios = require('axios');
 const path = require('path');
 const sla = require('../config/sla');
 const config = require('../config/env');
+const imageStore = require('../services/imageStore');
 const CLUSTERING_CATEGORIES = [
   'Potholes & Road Damage', 'Garbage Pile-ups', 'Broken Street Lights',
   'pothole', 'street_light', 'garbage', 'road'
@@ -13,10 +14,23 @@ exports.createIssue = async (req, res) => {
   try {
     const { title, category, description, address, latitude, longitude } = req.body;
     const userId = req.user.id;
-    
+
     const hostUrl = config.apiUrl;
-    let uploadedFile = req.file ? req.file.path : null;
-    let uploadedImageUrl = req.file ? `${hostUrl}/uploads/${req.file.filename}` : null;
+    let uploadedFile = null;
+    let uploadedImageUrl = null;
+
+    if (req.file) {
+      // A direct multipart upload. The photograph is compressed and stored in
+      // MongoDB before anything else happens, so an AI call or a save failure
+      // can never orphan the image.
+      const stored = await imageStore.saveImage({
+        buffer: req.file.buffer,
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+      });
+      uploadedImageUrl = `${hostUrl}/uploads/${stored.filename}`;
+      uploadedFile = uploadedImageUrl;
+    }
 
     if (!uploadedFile) {
       // Fallback: check if the client sent an already-uploaded imageUrl / imageUrls

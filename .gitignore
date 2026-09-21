@@ -128,7 +128,7 @@ server/node_modules
 **/generated_plugins.cmake
 
 
-# Uploaded images (stored in MongoDB)
+# Uploaded photographs (stored in MongoDB GridFS; legacy files on disk)
 server/uploads/
 
 # Test directories

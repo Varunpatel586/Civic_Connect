@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const auth = require('../middleware/auth');
 const admin = require('../middleware/admin');
 const Issue = require('../models/Issue');
@@ -15,6 +14,7 @@ const { wardFilter, officerCoversWard } = require('../config/wards');
 const issueController = require('../controllers/issueController');
 const notificationService = require('../services/notificationService');
 const verification = require('../services/verification');
+const imageStore = require('../services/imageStore');
 const { referenceFor } = require('../config/reference');
 
 const getUserIdFromRequest = (req) => {
@@ -30,24 +30,10 @@ const getUserIdFromRequest = (req) => {
   }
 };
 
-// Ensure uploads folder exists
-const uploadDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Multer Config
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    // Safe because fileFilter already rejected anything outside the allowlist.
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, 'photo-' + uniqueSuffix + ext);
-  },
-});
+// Multer holds photographs in memory only. Storage happens in imageStore,
+// which compresses the bytes and writes them into MongoDB GridFS — nothing
+// is ever written to the container filesystem.
+const storage = multer.memoryStorage();
 /**
  * Only real photographs, and only small ones.
  *
@@ -183,20 +169,26 @@ const voteMapFor = async (userId, issues) => {
 };
 
 // @route   POST api/issues/upload
-// @desc    Upload file to server storage
+// @desc    Store a photograph in MongoDB and return the URL it is served at
 // @access  Private
-router.post('/upload', auth, upload.single('photo'), (req, res) => {
+router.post('/upload', auth, upload.single('photo'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
+    const stored = await imageStore.saveImage({
+      buffer: req.file.buffer,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+    });
+
     const hostUrl = config.apiUrl;
-    const fileUrl = `${hostUrl}/uploads/${req.file.filename}`;
+    const fileUrl = `${hostUrl}/uploads/${stored.filename}`;
 
     res.json({ url: fileUrl });
   } catch (err) {
-    console.error(err.message);
+    console.error('Upload error:', err.message);
     res.status(500).json({ message: 'Server upload error' });
   }
 });
@@ -204,7 +196,10 @@ router.post('/upload', auth, upload.single('photo'), (req, res) => {
 // @route   POST api/issues
 // @desc    Create new issue
 // @access  Private
-router.post('/', auth, issueController.createIssue);
+// Accepts either a JSON payload referencing an already-uploaded URL, or a
+// direct multipart upload — multer passes non-multipart bodies through
+// untouched, so existing JSON clients are unaffected.
+router.post('/', auth, upload.single('photo'), issueController.createIssue);
 
 // @route   GET api/issues/nearby
 // @desc    Fetch issues near a location
