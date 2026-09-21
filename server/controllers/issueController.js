@@ -4,6 +4,7 @@ const path = require('path');
 const sla = require('../config/sla');
 const config = require('../config/env');
 const imageStore = require('../services/imageStore');
+const { requestBaseUrl } = require('../utils/requestBaseUrl');
 const CLUSTERING_CATEGORIES = [
   'Potholes & Road Damage', 'Garbage Pile-ups', 'Broken Street Lights',
   'pothole', 'street_light', 'garbage', 'road'
@@ -15,7 +16,9 @@ exports.createIssue = async (req, res) => {
     const { title, category, description, address, latitude, longitude } = req.body;
     const userId = req.user.id;
 
-    const hostUrl = config.apiUrl;
+    // The host this request arrived on, so stored photograph URLs point at the
+    // deployment that served the complaint rather than at a configured guess.
+    const hostUrl = requestBaseUrl(req) || config.apiUrl;
     let uploadedFile = null;
     let uploadedImageUrl = null;
 

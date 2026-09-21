@@ -378,7 +378,9 @@ class _EvidenceState extends State<_Evidence> {
             },
             itemBuilder: (context, index) {
               return CachedNetworkImage(
-                imageUrl: urls[index],
+                // The carousel is the first place a photograph is shown, so it
+                // is the first place a stale stored host becomes a blank card.
+                imageUrl: ApiClient().normalizeUrl(urls[index]),
                 fit: BoxFit.cover,
                 fadeInDuration: const Duration(milliseconds: 180),
                 placeholder: (context, url) =>

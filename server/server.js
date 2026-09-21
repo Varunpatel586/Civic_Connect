@@ -9,8 +9,19 @@ const rateLimit = require('express-rate-limit');
 // misconfigured server never reaches the point of serving requests.
 const config = require('./config/env');
 const connectDB = require('./config/db');
+const { withRequestBaseUrl } = require('./utils/requestBaseUrl');
 
 const app = express();
+
+/**
+ * One proxy hop, which is what Render puts in front of this app.
+ *
+ * Without this, `req.protocol` reports http (the socket, not the client's
+ * request) and `req.ip` reports the proxy — so every visitor would share one
+ * rate-limit budget and every rebuilt image URL would be a cleartext http URL
+ * that Android refuses.
+ */
+app.set('trust proxy', 1);
 
 connectDB();
 
@@ -31,6 +42,13 @@ app.use(
 // Bounded so a malformed or hostile request cannot exhaust memory. Photographs
 // arrive as multipart, not JSON, so this does not need to be large.
 app.use(express.json({ limit: '256kb' }));
+
+/**
+ * Publishes the origin each response is being served from, so stored
+ * photograph URLs can be rebuilt against the host the client actually
+ * reached rather than a configured guess. See utils/requestBaseUrl.js.
+ */
+app.use(withRequestBaseUrl);
 
 /**
  * Blanket ceiling. Generous enough that ordinary use never notices, low enough

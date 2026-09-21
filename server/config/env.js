@@ -69,6 +69,10 @@ function loadConfig() {
     mongoUri: required('MONGO_URI'),
     jwtSecret,
     apiUrl: optional('API_URL', 'http://localhost:5000'),
+    // Render sets this to the service's public URL. It is more trustworthy than
+    // a hand-typed API_URL, so it is preferred when a request cannot supply the
+    // origin itself (a background job, a script).
+    renderExternalUrl: optional('RENDER_EXTERNAL_URL', ''),
     aiServiceUrl: optional('AI_SERVICE_URL', ''),
     googleClientIds: optional('GOOGLE_CLIENT_IDS', optional('GOOGLE_CLIENT_ID', ''))
       .split(',')

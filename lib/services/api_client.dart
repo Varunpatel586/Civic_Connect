@@ -31,17 +31,42 @@ class ApiClient {
     return configured;
   }
 
+  /// The scheme and authority the API is reachable at, with the `/api` suffix
+  /// and any stale port removed — `https://civic-connect-api-eq0j.onrender.com`.
+  String get _apiOrigin {
+    final uri = Uri.parse(baseUrl);
+    if (!uri.hasScheme || uri.host.isEmpty) return '';
+    return uri.hasPort
+        ? '${uri.scheme}://${uri.host}:${uri.port}'
+        : '${uri.scheme}://${uri.host}';
+  }
+
+  /// Points a stored photograph URL at the server this build actually talks to.
+  ///
+  /// Photographs are stored beside an absolute URL recorded by whichever server
+  /// accepted the upload, so the database accumulates links to `localhost:5000`
+  /// and to hostnames from earlier deployments — and a phone that is handed
+  /// `localhost` resolves it to itself, not to the server. The bytes are served
+  /// by the configured API either way, so the origin is replaced and the path
+  /// kept. Idempotent: a URL already pointing at the right host is returned
+  /// unchanged, and anything outside `/uploads/` — a Google avatar, a stock
+  /// photograph — is left alone because this server does not serve it.
   String normalizeUrl(String url) {
     if (url.isEmpty) return url;
-    if (url.contains('localhost')) {
-      try {
-        final uri = Uri.parse(baseUrl);
-        return url.replaceAll('localhost', uri.host);
-      } catch (e) {
-        debugPrint('Error parsing baseUrl for normalization: $e');
-      }
-    }
-    return url;
+
+    const marker = '/uploads/';
+    final markerIndex = url.indexOf(marker);
+    if (markerIndex == -1) return url;
+
+    // Drop any query string; `?v=2` on a photograph would otherwise land
+    // inside the filename.
+    final filename = url.substring(markerIndex + marker.length).split('?').first;
+    if (filename.isEmpty) return url;
+
+    final origin = _apiOrigin;
+    if (origin.isEmpty) return url;
+
+    return '$origin$marker$filename';
   }
 
   String? _token;

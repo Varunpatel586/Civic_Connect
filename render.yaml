@@ -14,6 +14,10 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: API_URL
+        # Only a fallback for work that runs outside a request — a script or a
+        # background job. Photograph URLs are otherwise built from the host each
+        # request arrived on, so a wrong value here cannot break the app. Render
+        # injects RENDER_EXTERNAL_URL, which takes precedence over this anyway.
         sync: false
       - key: CORS_ORIGINS
         sync: false

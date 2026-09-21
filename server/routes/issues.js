@@ -16,6 +16,7 @@ const notificationService = require('../services/notificationService');
 const verification = require('../services/verification');
 const imageStore = require('../services/imageStore');
 const absoluteStoredUrl = require('../utils/absoluteStoredUrl');
+const { requestBaseUrl } = require('../utils/requestBaseUrl');
 const { referenceFor } = require('../config/reference');
 
 const getUserIdFromRequest = (req) => {
@@ -106,7 +107,7 @@ const serializeIssue = (issue, { userVote = null, includeHistory = false } = {})
     category: issue.category,
     description: issue.description,
     image_url: absoluteStoredUrl(issue.imageUrl),
-    image_urls: (issue.imageUrls || []).map(absoluteStoredUrl),
+    image_urls: (issue.imageUrls || []).map((url) => absoluteStoredUrl(url)),
     latitude: issue.latitude,
     longitude: issue.longitude,
     address: issue.address,
@@ -185,7 +186,9 @@ router.post('/upload', auth, upload.single('photo'), async (req, res) => {
       mimetype: req.file.mimetype,
     });
 
-    const hostUrl = config.apiUrl;
+    // Built from the host this request arrived on, so a photograph uploaded
+    // through Render is stored pointing at Render rather than at a guess.
+    const hostUrl = requestBaseUrl(req) || config.apiUrl;
     const fileUrl = `${hostUrl}/uploads/${stored.filename}`;
 
     res.json({ url: fileUrl });
