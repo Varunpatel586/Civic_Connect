@@ -15,6 +15,7 @@ const issueController = require('../controllers/issueController');
 const notificationService = require('../services/notificationService');
 const verification = require('../services/verification');
 const imageStore = require('../services/imageStore');
+const absoluteStoredUrl = require('../utils/absoluteStoredUrl');
 const { referenceFor } = require('../config/reference');
 
 const getUserIdFromRequest = (req) => {
@@ -104,8 +105,8 @@ const serializeIssue = (issue, { userVote = null, includeHistory = false } = {})
     title: issue.title,
     category: issue.category,
     description: issue.description,
-    image_url: issue.imageUrl,
-    image_urls: issue.imageUrls,
+    image_url: absoluteStoredUrl(issue.imageUrl),
+    image_urls: (issue.imageUrls || []).map(absoluteStoredUrl),
     latitude: issue.latitude,
     longitude: issue.longitude,
     address: issue.address,
@@ -127,19 +128,20 @@ const serializeIssue = (issue, { userVote = null, includeHistory = false } = {})
     reference: referenceFor(issue),
     // The photo attached to the most recent Resolved claim, which is what
     // the citizen is shown beside the original when asked to confirm.
-    resolution_photo_url: latestResolutionPhoto(issue),
+    resolution_photo_url: absoluteStoredUrl(latestResolutionPhoto(issue)),
     verification_state: (issue.verification && issue.verification.state) || 'none',
     verification_due_by: (issue.verification && issue.verification.dueBy) || null,
     verification_note: (issue.verification && issue.verification.note) || '',
-    verification_evidence_url:
-      (issue.verification && issue.verification.evidenceUrl) || '',
+    verification_evidence_url: absoluteStoredUrl(
+      (issue.verification && issue.verification.evidenceUrl) || ''
+    ),
     escalated_at: issue.escalatedAt || null,
     reopen_count: issue.reopenCount || 0,
     timestamp: issue.createdAt,
     created_at: issue.createdAt,
     user: {
       username: user ? user.username : 'Unknown',
-      avatar_url: user ? user.avatarUrl : null,
+      avatar_url: user ? absoluteStoredUrl(user.avatarUrl) : null,
     },
   };
 
@@ -148,7 +150,7 @@ const serializeIssue = (issue, { userVote = null, includeHistory = false } = {})
       status: entry.status,
       changed_at: entry.changedAt,
       note: entry.note || '',
-      photo_url: entry.photoUrl || '',
+      photo_url: absoluteStoredUrl(entry.photoUrl) || '',
     }));
   }
 

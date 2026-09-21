@@ -3,6 +3,7 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const Comment = require('../models/Comment');
 const Issue = require('../models/Issue');
+const absoluteStoredUrl = require('../utils/absoluteStoredUrl');
 
 // @route   GET api/comments/user
 // @desc    Get all comments by the current user
@@ -48,7 +49,7 @@ router.get('/issue/:issueId', async (req, res) => {
         username: comment.userId ? comment.userId.username : 'Unknown',
         email: '',
         role: 'user',
-        avatar_url: comment.userId ? comment.userId.avatarUrl : null,
+        avatar_url: comment.userId ? absoluteStoredUrl(comment.userId.avatarUrl) : null,
         created_at: comment.userId ? comment.userId.createdAt : comment.createdAt,
       },
     }));
@@ -98,7 +99,7 @@ router.post('/issue/:issueId', auth, async (req, res) => {
         username: comment.userId ? comment.userId.username : 'Unknown',
         email: '',
         role: 'user',
-        avatar_url: comment.userId ? comment.userId.avatarUrl : null,
+        avatar_url: comment.userId ? absoluteStoredUrl(comment.userId.avatarUrl) : null,
         created_at: comment.userId ? comment.userId.createdAt : comment.createdAt,
       },
     };
@@ -143,7 +144,7 @@ router.put('/:id', auth, async (req, res) => {
         username: comment.userId ? comment.userId.username : 'Unknown',
         email: comment.userId ? comment.userId.email : '',
         role: comment.userId ? comment.userId.role : 'user',
-        avatar_url: comment.userId ? comment.userId.avatarUrl : null,
+        avatar_url: comment.userId ? absoluteStoredUrl(comment.userId.avatarUrl) : null,
         created_at: comment.userId ? comment.userId.createdAt : comment.createdAt,
       },
     };

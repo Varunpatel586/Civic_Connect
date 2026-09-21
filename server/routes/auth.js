@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
+const absoluteStoredUrl = require('../utils/absoluteStoredUrl');
 const { OAuth2Client } = require('google-auth-library');
 const config = require('../config/env');
 
@@ -126,7 +127,7 @@ router.get('/profile', auth, async (req, res) => {
       username: user.username,
       email: user.email,
       role: user.role,
-      avatarUrl: user.avatarUrl,
+      avatarUrl: absoluteStoredUrl(user.avatarUrl),
       createdAt: user.createdAt,
     });
   } catch (err) {
