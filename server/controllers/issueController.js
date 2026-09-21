@@ -2,10 +2,7 @@ const Issue = require('../models/Issue');
 const axios = require('axios');
 const path = require('path');
 const sla = require('../config/sla');
-
 const config = require('../config/env');
-
-const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const CLUSTERING_CATEGORIES = [
   'Potholes & Road Damage', 'Garbage Pile-ups', 'Broken Street Lights',
   'pothole', 'street_light', 'garbage', 'road'
@@ -67,7 +64,7 @@ exports.createIssue = async (req, res) => {
       });
 
       // Step 2: If candidates exist, evaluate Image Similarity via FastAPI
-      if (candidates.length > 0) {
+      if (candidates.length > 0 && config.aiServiceUrl) {
         try {
           // Map candidate image URLs to absolute local paths
           // Since URLs are like /uploads/photo-xxx.jpg, we resolve them relative to the server/uploads dir
@@ -83,7 +80,10 @@ exports.createIssue = async (req, res) => {
             min_inliers_threshold: 25
           };
 
-          const { data: aiResult } = await axios.post(`${AI_SERVICE_URL}/api/v1/compare`, aiPayload);
+          const { data: aiResult } = await axios.post(
+            `${config.aiServiceUrl}/api/v1/compare`,
+            aiPayload
+          );
 
           if (aiResult.is_duplicate && aiResult.matched_issue_id) {
             matchedCluster = await Issue.findById(aiResult.matched_issue_id);
